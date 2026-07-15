@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:03,000
+FLOCK / Sheep & Pedigree Manager
+
+2
+00:00:03,000 --> 00:00:12,000
+Every animal gets a full profile - health, weight & pedigree
+
+3
+00:00:12,000 --> 00:00:24,000
+Trace up to four generations of pedigree at a glance
+
+4
+00:00:24,000 --> 00:00:30,000
+One dashboard for the whole flock
+
+5
+00:00:30,000 --> 00:00:36,000
+Breeding check flags risky pairings before you commit
+
+6
+00:00:36,000 --> 00:00:45,000
+Safe pairing? Record the mating in one click
+
+7
+00:00:45,000 --> 00:00:51,000
+New - set a lambing due date on the animal record
+
+8
+00:00:51,000 --> 00:01:00,000
+New in this release / Breeding lifecycle & lambing tracking / Weight & growth history with charts / Photos & a deeper 4-generation pedigree / Installable, works offline in the field
