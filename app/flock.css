@@ -192,3 +192,81 @@
   .tab.is-active { color: var(--color-accent); }
   .tab svg { width: 23px; height: 23px; }
 }
+
+/* — Sign-in as a pedigree entry —
+   The card is drawn as the focal node of the app's own family tree: Ram/Ewe
+   parent nodes join through the tree's connector lines into the card, the farm
+   name hangs off the stem on a livestock ear tag, and a row of lamb dots hangs
+   below. Reuses .tree-row/.parents/.up-stem/.focal-wrap/.kids from the tree
+   screens. Plain CSS keyframes; honours prefers-reduced-motion. */
+.signin-scene { position: relative; min-height: 100dvh; display: grid; place-items: center; padding: 24px; overflow: hidden; }
+.signin-scene::before {
+  content: ""; position: absolute; inset: -25% 0 auto 0; height: 62vh; pointer-events: none;
+  background: radial-gradient(58% 100% at 50% 0%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 72%);
+  filter: blur(38px);
+}
+.signin-lang { position: absolute; top: 16px; right: 16px; z-index: 2; width: auto; background: var(--color-bg); }
+
+.signin-tree { position: relative; z-index: 1; width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; align-items: center; }
+.signin-tree .focal-wrap { width: 100%; }
+.signin-tree .parents > li { padding-inline: 26px; }
+.signin-tree .up-stem { height: 34px; }
+.signin-tree .parents, .signin-tree .up-stem { animation: signin-fade .5s ease .35s both; }
+.signin-tree .kids { animation: signin-fade .5s ease .55s both; }
+@keyframes signin-fade { from { opacity: 0; } }
+.signin-pnode, .signin-pnode:hover { cursor: default; border-color: var(--color-divider); }
+.signin-lambs .lamb { display: block; width: 11px; height: 11px; border-radius: 50%; background: var(--color-neutral-400); }
+
+.signin-card {
+  position: relative; z-index: 1; width: 100%; padding: 36px 26px 26px;
+  border: 1px solid var(--color-divider); box-shadow: var(--shadow-lg);
+  animation: signin-rise .7s cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes signin-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.signin-card h1 { font-size: 25px; text-align: center; margin: 6px 0 3px; }
+.signin-sub { text-align: center; margin: 0; font-size: 13.5px; }
+
+/* the farm's ear tag, hanging from the pedigree stem over the card's top edge */
+.eartag {
+  position: absolute; top: -18px; left: 50%; z-index: 2; max-width: 78%;
+  transform: translateX(-50%) rotate(-2.5deg);
+  background: var(--color-accent); color: var(--color-bg);
+  font-family: var(--font-heading); font-size: 15px; line-height: 1;
+  padding: 13px 16px 10px; border-radius: 8px 8px 13px 13px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.eartag::before { content: ""; position: absolute; top: 4.5px; left: 50%; transform: translateX(-50%);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--color-bg); }
+
+.signin-form { display: grid; gap: 14px; margin-top: 16px; }
+.signin-form > * { animation: signin-rise .55s ease both; }
+.signin-form > *:nth-child(1) { animation-delay: .06s; }
+.signin-form > *:nth-child(2) { animation-delay: .13s; }
+.signin-form > *:nth-child(3) { animation-delay: .2s; }
+.signin-form > *:nth-child(4) { animation-delay: .27s; }
+
+.field-icon { position: relative; }
+.field-icon .lead { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; transition: color .25s; }
+.field-icon:focus-within .lead { color: var(--color-accent); }
+.field-icon .input { padding-left: 38px; }
+.field-icon .input.has-trail { padding-right: 42px; }
+.field-icon .trail {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; padding: 6px; border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; border-radius: 50%; transition: color .2s, background .2s;
+}
+.field-icon .trail:hover { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+.signin-spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-bg) 55%, transparent); border-top-color: transparent;
+  animation: signin-spin .7s linear infinite;
+}
+@keyframes signin-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .signin-card, .signin-form > *, .signin-spinner,
+  .signin-tree .parents, .signin-tree .up-stem, .signin-tree .kids { animation: none; }
+}

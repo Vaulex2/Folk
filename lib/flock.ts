@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getSupabase } from "./supabase";
+import { requireUser } from "./auth/server";
 import type { Sheep, HealthNote, Mating, WeightRecord } from "./sheep";
 
 export const FLOCK_TAG = "flock";
@@ -70,31 +71,41 @@ const loadMatings = unstable_cache(
   { tags: [FLOCK_TAG], revalidate: 60 }
 );
 
+// Every wrapper below calls requireUser() BEFORE entering the unstable_cache
+// scope (cookies can't be read inside it). The data client bypasses RLS, so
+// this is the access check for every page — all reads flow through here.
+
 /** All sheep, active and inactive. Pedigree links need inactive animals too. */
 export async function getAllSheep(): Promise<Sheep[]> {
+  await requireUser();
   return loadAllSheep();
 }
 
 /** Only living/present animals — derived in memory from the single cached read. */
 export async function getActiveSheep(): Promise<Sheep[]> {
+  await requireUser();
   return (await loadAllSheep()).filter((s) => s.status === "Active");
 }
 
 /** A single sheep — found in the cached flock, no extra round-trip. */
 export async function getSheep(id: number): Promise<Sheep | null> {
+  await requireUser();
   return (await loadAllSheep()).find((s) => s.id === id) ?? null;
 }
 
 export async function getHealthNotes(sheepId: number): Promise<HealthNote[]> {
+  await requireUser();
   return loadHealthNotes(sheepId);
 }
 
 /** All matings, newest first. */
 export async function getMatings(): Promise<Mating[]> {
+  await requireUser();
   return loadMatings();
 }
 
 /** One sheep's weight history, oldest first (chart-ready). */
 export async function getWeightRecords(sheepId: number): Promise<WeightRecord[]> {
+  await requireUser();
   return loadWeightRecords(sheepId);
 }

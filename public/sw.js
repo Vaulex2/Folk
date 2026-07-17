@@ -1,7 +1,7 @@
 // Flock service worker: installable app shell + last-viewed pages readable
 // offline. GET/same-origin only — server actions are POSTs and pass through
 // untouched, so writes always require connectivity.
-const CACHE = "flock-v1";
+const CACHE = "flock-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -45,7 +45,11 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((res) => {
-        if (res.ok) {
+        // Never cache the login page or auth redirects: a logged-out redirect
+        // must not overwrite a protected page's cached copy, and login HTML
+        // must not be served for app URLs offline.
+        const cacheable = res.ok && !res.redirected && url.pathname !== "/login";
+        if (cacheable) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(request, copy));
         }

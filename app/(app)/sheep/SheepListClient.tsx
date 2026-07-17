@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { SheepView } from "@/lib/sheep";
 import { HEALTH_STATUSES } from "@/lib/sheep";
@@ -91,7 +92,7 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
               <tr key={s.id} onClick={() => router.push(`/sheep/${s.id}`)}>
                 <td>
                   <span className="rowtagwrap">
-                    {s.photoUrl && <img className="row-avatar" src={s.photoUrl} alt="" loading="lazy" />}
+                    {s.photoUrl && <Image className="row-avatar" src={s.photoUrl} alt="" width={28} height={28} />}
                     <span className="rowtag">{s.tag}</span>
                   </span>
                 </td>

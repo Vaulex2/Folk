@@ -1,10 +1,11 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 // Node's fetch (undici) occasionally throws "TypeError: fetch failed" when a pooled
 // connection to Supabase goes stale or a connect/TLS handshake hiccups. These are
 // connection-level failures (the request never reached the server), so retrying is
 // safe and makes reads and writes reliable.
-async function resilientFetch(
+export async function resilientFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   tries = 3
@@ -23,14 +24,16 @@ async function resilientFetch(
   throw lastErr;
 }
 
-// Server-side Supabase client. Used from Server Components and Server Actions.
-// v1 has no auth, so the anon key is sufficient (RLS is open — see README security note).
+// Server-side data client, used from Server Components and Server Actions. Uses the
+// secret key (bypasses RLS) because cached reads in lib/flock.ts run inside
+// unstable_cache, which cannot read auth cookies — so every entry point that reaches
+// this client is guarded by requireUser() (lib/auth/server.ts) instead of RLS.
 export function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) {
     throw new Error(
-      "Supabase env vars missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local (see .env.example)."
+      "Supabase env vars missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local (see .env.example)."
     );
   }
   return createClient(url, key, {
@@ -40,5 +43,9 @@ export function getSupabase() {
 }
 
 export function hasSupabaseConfig() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      process.env.SUPABASE_SECRET_KEY
+  );
 }

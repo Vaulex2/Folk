@@ -1,6 +1,8 @@
 -- Flock schema. Run in the Supabase SQL editor (or `supabase db execute`).
--- v1 is single-farmer with no auth; RLS is left open. Add auth + policies
--- before any multi-user or public deployment (see README security note).
+-- Access model: one farm, one shared Supabase Auth login. Policies grant full
+-- access TO authenticated; the anon role has no access. The Next.js server
+-- itself uses the secret key (bypasses RLS) — these policies exist to seal
+-- the directly-reachable REST/Storage APIs. See README "Security".
 
 create table if not exists sheep (
   id         bigint generated always as identity primary key,
@@ -60,26 +62,34 @@ create table if not exists weight_records (
 
 create index if not exists weight_records_sheep_idx on weight_records(sheep_id);
 
--- Open access for v1 (no auth). Replace with real policies when auth is added.
+-- Authenticated-only access. Single shared farm login, so no ownership
+-- predicate exists — the TO clause is the whole access model. (Old open
+-- policies are dropped by name so re-running this file upgrades v1 installs.)
 alter table sheep enable row level security;
 alter table health_notes enable row level security;
 alter table matings enable row level security;
 alter table weight_records enable row level security;
 
 drop policy if exists sheep_all on sheep;
-create policy sheep_all on sheep for all using (true) with check (true);
+drop policy if exists sheep_rw on sheep;
+create policy sheep_rw on sheep for all to authenticated using (true) with check (true);
 
 drop policy if exists health_notes_all on health_notes;
-create policy health_notes_all on health_notes for all using (true) with check (true);
+drop policy if exists health_notes_rw on health_notes;
+create policy health_notes_rw on health_notes for all to authenticated using (true) with check (true);
 
 drop policy if exists matings_all on matings;
-create policy matings_all on matings for all using (true) with check (true);
+drop policy if exists matings_rw on matings;
+create policy matings_rw on matings for all to authenticated using (true) with check (true);
 
 drop policy if exists weight_records_all on weight_records;
-create policy weight_records_all on weight_records for all using (true) with check (true);
+drop policy if exists weight_records_rw on weight_records;
+create policy weight_records_rw on weight_records for all to authenticated using (true) with check (true);
 
--- Public storage bucket for sheep photos. Open like the tables above (v1, no
--- auth) — lock down before any public deployment.
+-- Storage bucket for sheep photos: public READ (photo_url values are stored as
+-- public URLs and cached pages depend on them not expiring — an accepted
+-- trade-off, sheep photos are low-sensitivity), authenticated-only WRITE.
+-- Upsert needs INSERT + SELECT + UPDATE; the public select policy supplies SELECT.
 insert into storage.buckets (id, name, public)
 values ('sheep-photos', 'sheep-photos', true)
 on conflict (id) do nothing;
@@ -88,7 +98,67 @@ drop policy if exists sheep_photos_read on storage.objects;
 create policy sheep_photos_read on storage.objects for select using (bucket_id = 'sheep-photos');
 
 drop policy if exists sheep_photos_write on storage.objects;
-create policy sheep_photos_write on storage.objects for insert with check (bucket_id = 'sheep-photos');
+create policy sheep_photos_write on storage.objects
+  for insert to authenticated with check (bucket_id = 'sheep-photos');
 
 drop policy if exists sheep_photos_update on storage.objects;
-create policy sheep_photos_update on storage.objects for update using (bucket_id = 'sheep-photos') with check (bucket_id = 'sheep-photos');
+create policy sheep_photos_update on storage.objects
+  for update to authenticated using (bucket_id = 'sheep-photos') with check (bucket_id = 'sheep-photos');
+
+-- Notifications (Telegram). See README "Notifications" section for the manual
+-- secrets/vault steps this depends on — they cannot live in this file.
+create table if not exists notification_log (
+  id         bigint generated always as identity primary key,
+  sheep_id   bigint references sheep(id) on delete cascade,
+  type       text not null,
+  ref_date   date,           -- for vaccination_due: the vaccination_date this reminder covers; null otherwise
+  sent_at    timestamptz not null default now(),
+  unique (sheep_id, type, ref_date)
+);
+
+-- Named so it can be redefined on re-run as the set of event types grows.
+alter table notification_log drop constraint if exists notification_log_type_check;
+alter table notification_log add constraint notification_log_type_check
+  check (type in (
+    'new_sheep','health_changed','removed','restored','vaccination_due',
+    'mating_recorded','mating_failed','sheep_edited','note_added'
+  ));
+
+create index if not exists notification_log_sheep_type_idx on notification_log(sheep_id, type);
+
+alter table notification_log enable row level security;
+drop policy if exists notification_log_all on notification_log;
+drop policy if exists notification_log_rw on notification_log;
+create policy notification_log_rw on notification_log for all to authenticated using (true) with check (true);
+
+-- Enable the extensions needed for the daily vaccination-reminder cron job.
+-- If the SQL editor role lacks privilege to create these, enable them
+-- manually via Dashboard → Database → Extensions (search "pg_cron" and
+-- "pg_net") and skip these two lines.
+create extension if not exists pg_cron with schema extensions;
+create extension if not exists pg_net with schema extensions;
+
+-- MANUAL STEP (run once, do NOT commit the real value): store a random shared
+-- secret in Vault that the cron job below sends as a header, checked by the
+-- vaccination-reminder Edge Function against its own CRON_SECRET secret
+-- (`supabase secrets set CRON_SECRET=<same value>`).
+--   select vault.create_secret('<generate-a-random-string>', 'cron_secret');
+
+-- Calls the vaccination-reminder Edge Function once a day at 05:00 UTC.
+-- Named jobs upsert on re-run, so re-applying this file is safe.
+-- MANUAL STEP: replace <PROJECT_REF> below with your own project ref (the
+-- subdomain of your NEXT_PUBLIC_SUPABASE_URL) before running.
+select cron.schedule(
+  'vaccination-reminder-daily',
+  '0 5 * * *',
+  $$
+  select net.http_post(
+    url := 'https://<PROJECT_REF>.supabase.co/functions/v1/vaccination-reminder',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+    ),
+    body := '{}'::jsonb
+  ) as request_id;
+  $$
+);

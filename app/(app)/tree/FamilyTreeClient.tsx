@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Option } from "@/lib/options";
 import { useT } from "@/components/I18nProvider";
@@ -21,7 +22,7 @@ export interface TreeNode {
 function NodeButton({ node, role, onTree }: { node: TreeNode; role: string; onTree: (id: number) => void }) {
   return (
     <button className="node" type="button" onClick={() => onTree(node.id)}>
-      {node.photoUrl && <img className="node-photo" src={node.photoUrl} alt="" loading="lazy" />}
+      {node.photoUrl && <Image className="node-photo" src={node.photoUrl} alt="" width={28} height={28} />}
       <span className="node-tag">{node.tag}</span>
       <span className="node-meta">{role} · {node.ageLabel}</span>
       <span className="node-hs" style={{ background: node.hsBg, color: node.hsFg }}>{node.healthLabel}</span>
@@ -133,7 +134,7 @@ export default function FamilyTreeClient({
                   )}
                 <div className="anc-slot focal-slot has-up" style={{ gridColumn: `1 / -1` }}>
                   <div className="node focal">
-                    {focal.photoUrl && <img className="node-photo" src={focal.photoUrl} alt="" />}
+                    {focal.photoUrl && <Image className="node-photo" src={focal.photoUrl} alt="" width={28} height={28} />}
                     <span className="node-tag">{focal.tag}</span>
                     <span className="node-meta">{focal.sexWithLamb} · {focal.breed} · {focal.ageLabel}</span>
                     <span className="node-hs" style={{ background: focal.hsBg, color: focal.hsFg }}>{focal.healthLabel}</span>
@@ -146,7 +147,7 @@ export default function FamilyTreeClient({
                 <div className="ped-note">{t("tree.founder")}</div>
                 <div className={`focal-wrap${hasKids ? " has-drop" : ""}`}>
                   <div className="node focal">
-                    {focal.photoUrl && <img className="node-photo" src={focal.photoUrl} alt="" />}
+                    {focal.photoUrl && <Image className="node-photo" src={focal.photoUrl} alt="" width={28} height={28} />}
                     <span className="node-tag">{focal.tag}</span>
                     <span className="node-meta">{focal.sexWithLamb} · {focal.breed} · {focal.ageLabel}</span>
                     <span className="node-hs" style={{ background: focal.hsBg, color: focal.hsFg }}>{focal.healthLabel}</span>

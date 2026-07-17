@@ -3,17 +3,24 @@
 import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth/server";
 import { FLOCK_TAG } from "@/lib/flock";
+import { notifyEvent } from "@/lib/notify";
+import { logError } from "@/lib/log";
 import {
   addDays,
   GESTATION_DAYS,
-  HEALTH_STATUSES,
   type HealthStatus,
   type Mating,
   type MatingStatus,
-  type Sex,
   type SheepStatus,
 } from "@/lib/sheep";
+import {
+  validateHealthNote,
+  validateLambingInput,
+  validateSheepInput,
+  validateWeightRecord,
+} from "@/lib/validation";
 
 export interface FormState {
   error?: string;
@@ -25,59 +32,93 @@ function str(fd: FormData, k: string): string {
   return String(fd.get(k) ?? "").trim();
 }
 
+// Log the real database error server-side and return a generic message to the
+// form — raw Postgres/PostgREST error text must not surface in the UI.
+function dbFail(scope: string, err: unknown): FormState {
+  logError(scope, err);
+  return { error: "errors.dbError" };
+}
+
+// Escape LIKE/ILIKE wildcards so a tag is matched literally, not as a pattern
+// (default Postgres escape char is backslash).
+function escapeLike(v: string): string {
+  return v.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// For actions that throw (their forms don't render {error}); log the real cause
+// and throw a generic message so raw DB text never reaches an error overlay.
+function dbThrow(scope: string, err: unknown): never {
+  logError(scope, err);
+  throw new Error("Database operation failed");
+}
+
 /** Create or update a sheep. Used by SheepForm for both /sheep/new and /edit. */
 export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
   const idRaw = str(fd, "id");
   const id = idRaw ? parseInt(idRaw, 10) : null;
 
-  const tag = str(fd, "tag");
-  const sex = str(fd, "sex") as Sex;
-  const birth = str(fd, "birth");
-  const weightRaw = str(fd, "weight");
-  const breed = str(fd, "breed");
-  const color = str(fd, "color");
-  const motherRaw = str(fd, "mother_id");
-  const fatherRaw = str(fd, "father_id");
-  const health = str(fd, "health") as HealthStatus;
-  const vaccinationDate = str(fd, "vaccination_date");
-  const dueDate = str(fd, "due_date");
-
-  if (!tag) return { error: "form.errTagRequired" };
-  if (!birth) return { error: "form.errDob" };
-  if (sex !== "Ewe" && sex !== "Ram") return { error: "form.errSex" };
-  if (!HEALTH_STATUSES.includes(health)) return { error: "form.errHealth" };
+  const parsed = validateSheepInput({
+    tag: str(fd, "tag"),
+    sex: str(fd, "sex"),
+    birth: str(fd, "birth"),
+    weight: str(fd, "weight"),
+    breed: str(fd, "breed"),
+    color: str(fd, "color"),
+    mother_id: str(fd, "mother_id"),
+    father_id: str(fd, "father_id"),
+    health: str(fd, "health"),
+    vaccination_date: str(fd, "vaccination_date"),
+    due_date: str(fd, "due_date"),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+  const record = parsed.data;
+  const { tag, sex, breed, health } = record;
 
   // tag uniqueness (case-insensitive), excluding self on edit
-  const dup = await supabase.from("sheep").select("id").ilike("tag", tag);
-  if (dup.error) return { error: dup.error.message };
+  const dup = await supabase.from("sheep").select("id").ilike("tag", escapeLike(tag));
+  if (dup.error) return dbFail("saveSheep.dupCheck", dup.error);
   if ((dup.data ?? []).some((r) => r.id !== id)) {
     return { error: "form.errTagInUse" };
   }
 
-  const w = parseInt(weightRaw, 10);
-  const record = {
-    tag,
-    sex,
-    birth,
-    breed: breed || null,
-    color: color || null,
-    weight: Number.isNaN(w) ? (sex === "Ram" ? 90 : 68) : w,
-    mother_id: motherRaw ? parseInt(motherRaw, 10) : null,
-    father_id: fatherRaw ? parseInt(fatherRaw, 10) : null,
-    health,
-    vaccination_date: vaccinationDate || null,
-    due_date: dueDate || null,
-  };
-
   let savedId = id;
   if (id == null) {
     const { data, error } = await supabase.from("sheep").insert(record).select("id").single();
-    if (error) return { error: error.message };
+    if (error) return dbFail("saveSheep.insert", error);
     savedId = data.id;
+    await notifyEvent({ type: "new_sheep", sheepId: data.id, tag, sex, breed: breed || null });
   } else {
+    const { data: before, error: beforeErr } = await supabase
+      .from("sheep")
+      .select("tag, sex, birth, breed, color, weight, mother_id, father_id, health, vaccination_date, due_date")
+      .eq("id", id)
+      .single();
+    if (beforeErr) return dbFail("saveSheep.before", beforeErr);
     const { error } = await supabase.from("sheep").update(record).eq("id", id);
-    if (error) return { error: error.message };
+    if (error) return dbFail("saveSheep.update", error);
+
+    if (before.health !== health) {
+      await notifyEvent({ type: "health_changed", sheepId: id, tag, previousHealth: before.health, newHealth: health });
+    }
+
+    const editableFields = [
+      "tag",
+      "sex",
+      "birth",
+      "breed",
+      "color",
+      "weight",
+      "mother_id",
+      "father_id",
+      "vaccination_date",
+      "due_date",
+    ] as const;
+    const changedFields = editableFields.filter((f) => before[f] !== record[f]);
+    if (changedFields.length > 0) {
+      await notifyEvent({ type: "sheep_edited", sheepId: id, tag, changedFields });
+    }
   }
 
   updateTag(FLOCK_TAG);
@@ -86,36 +127,58 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
 
 /** Soft-remove: mark Sold or Died (keeps pedigree links intact) or restore to Active. */
 export async function setSheepStatus(id: number, status: SheepStatus) {
+  await requireUser();
   const supabase = getSupabase();
   const { error } = await supabase.from("sheep").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) dbThrow("setSheepStatus.update", error);
+
+  const { data } = await supabase.from("sheep").select("tag").eq("id", id).single();
+  const tag = data?.tag ?? String(id);
+  if (status === "Sold" || status === "Died") {
+    await notifyEvent({ type: "removed", sheepId: id, tag, status });
+  } else if (status === "Active") {
+    await notifyEvent({ type: "restored", sheepId: id, tag });
+  }
+
   updateTag(FLOCK_TAG);
 }
 
 /** Append a dated health note; if it carries a status, update the sheep's current health. */
 export async function addHealthNote(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
-  const sheepId = parseInt(str(fd, "sheep_id"), 10);
-  const date = str(fd, "date");
-  const statusRaw = str(fd, "status");
-  const note = str(fd, "note");
-
-  if (!Number.isFinite(sheepId)) return { error: "notes.errMissingSheep" };
-  if (!date) return { error: "notes.errDate" };
-  if (!note) return { error: "notes.errNote" };
-
-  const status = HEALTH_STATUSES.includes(statusRaw as HealthStatus)
-    ? (statusRaw as HealthStatus)
-    : null;
+  const parsed = validateHealthNote({
+    sheepId: parseInt(str(fd, "sheep_id"), 10),
+    date: str(fd, "date"),
+    status: str(fd, "status"),
+    note: str(fd, "note"),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+  const { sheep_id: sheepId, date, status, note } = parsed.data;
 
   const { error } = await supabase
     .from("health_notes")
     .insert({ sheep_id: sheepId, date, status, note });
-  if (error) return { error: error.message };
+  if (error) return dbFail("addHealthNote.insert", error);
 
   if (status) {
+    const { data: before } = await supabase.from("sheep").select("tag, health").eq("id", sheepId).single();
     const { error: uErr } = await supabase.from("sheep").update({ health: status }).eq("id", sheepId);
-    if (uErr) return { error: uErr.message };
+    if (uErr) return dbFail("addHealthNote.updateHealth", uErr);
+    if (before && before.health !== status) {
+      await notifyEvent({
+        type: "health_changed",
+        sheepId,
+        tag: before.tag,
+        previousHealth: before.health,
+        newHealth: status,
+      });
+    } else if (before) {
+      await notifyEvent({ type: "note_added", sheepId, tag: before.tag, note });
+    }
+  } else {
+    const { data: sheepRow } = await supabase.from("sheep").select("tag").eq("id", sheepId).single();
+    await notifyEvent({ type: "note_added", sheepId, tag: sheepRow?.tag ?? String(sheepId), note });
   }
 
   updateTag(FLOCK_TAG);
@@ -124,6 +187,7 @@ export async function addHealthNote(_prev: FormState, fd: FormData): Promise<For
 
 /** Store a (client-downscaled) photo in the sheep-photos bucket and save its URL. */
 export async function uploadSheepPhoto(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
   const sheepId = parseInt(str(fd, "sheep_id"), 10);
   const file = fd.get("file");
@@ -135,7 +199,7 @@ export async function uploadSheepPhoto(_prev: FormState, fd: FormData): Promise<
   const { error: upErr } = await supabase.storage
     .from("sheep-photos")
     .upload(path, file, { upsert: true, contentType: "image/jpeg" });
-  if (upErr) return { error: upErr.message };
+  if (upErr) return dbFail("uploadSheepPhoto.upload", upErr);
 
   // Stable path + upsert means CDN caches the old image; bust with a version param.
   const { data } = supabase.storage.from("sheep-photos").getPublicUrl(path);
@@ -143,7 +207,7 @@ export async function uploadSheepPhoto(_prev: FormState, fd: FormData): Promise<
     .from("sheep")
     .update({ photo_url: `${data.publicUrl}?v=${Date.now()}` })
     .eq("id", sheepId);
-  if (uErr) return { error: uErr.message };
+  if (uErr) return dbFail("uploadSheepPhoto.updateUrl", uErr);
 
   updateTag(FLOCK_TAG);
   return { ok: true };
@@ -151,19 +215,18 @@ export async function uploadSheepPhoto(_prev: FormState, fd: FormData): Promise<
 
 /** Append a dated weight record; the sheep's current weight follows the newest-dated record. */
 export async function addWeightRecord(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
-  const sheepId = parseInt(str(fd, "sheep_id"), 10);
-  const date = str(fd, "date");
-  const weightKg = parseFloat(str(fd, "weight_kg"));
+  const parsed = validateWeightRecord({
+    sheepId: parseInt(str(fd, "sheep_id"), 10),
+    date: str(fd, "date"),
+    weightKg: parseFloat(str(fd, "weight_kg")),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+  const { sheep_id: sheepId } = parsed.data;
 
-  if (!Number.isFinite(sheepId)) return { error: "notes.errMissingSheep" };
-  if (!date) return { error: "notes.errDate" };
-  if (!Number.isFinite(weightKg) || weightKg <= 0) return { error: "weights.errWeight" };
-
-  const { error } = await supabase
-    .from("weight_records")
-    .insert({ sheep_id: sheepId, date, weight_kg: weightKg });
-  if (error) return { error: error.message };
+  const { error } = await supabase.from("weight_records").insert(parsed.data);
+  if (error) return dbFail("addWeightRecord.insert", error);
 
   // Sync sheep.weight to the newest-dated record (a backdated entry must not win).
   const { data: latest, error: lErr } = await supabase
@@ -174,13 +237,13 @@ export async function addWeightRecord(_prev: FormState, fd: FormData): Promise<F
     .order("id", { ascending: false })
     .limit(1)
     .single();
-  if (lErr) return { error: lErr.message };
+  if (lErr) return dbFail("addWeightRecord.latest", lErr);
 
   const { error: uErr } = await supabase
     .from("sheep")
     .update({ weight: Math.round(latest.weight_kg) })
     .eq("id", sheepId);
-  if (uErr) return { error: uErr.message };
+  if (uErr) return dbFail("addWeightRecord.syncWeight", uErr);
 
   updateTag(FLOCK_TAG);
   return { ok: true };
@@ -197,6 +260,7 @@ async function resetEwePregnancy(eweId: number) {
 
 /** Record a planned mating from the breeding-check page. Due date = mating + gestation. */
 export async function recordMating(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
   const eweId = parseInt(str(fd, "ewe_id"), 10);
   const ramId = parseInt(str(fd, "ram_id"), 10);
@@ -207,9 +271,9 @@ export async function recordMating(_prev: FormState, fd: FormData): Promise<Form
 
   const { data: pair, error: pairErr } = await supabase
     .from("sheep")
-    .select("id, sex, status")
+    .select("id, tag, sex, status")
     .in("id", [eweId, ramId]);
-  if (pairErr) return { error: pairErr.message };
+  if (pairErr) return dbFail("recordMating.pair", pairErr);
   const ewe = (pair ?? []).find((s) => s.id === eweId);
   const ram = (pair ?? []).find((s) => s.id === ramId);
   if (!ewe || !ram || ewe.sex !== "Ewe" || ram.sex !== "Ram") return { error: "breeding.errPair" };
@@ -220,7 +284,7 @@ export async function recordMating(_prev: FormState, fd: FormData): Promise<Form
     .select("id")
     .eq("ewe_id", eweId)
     .in("status", ["Planned", "Confirmed"]);
-  if (openErr) return { error: openErr.message };
+  if (openErr) return dbFail("recordMating.open", openErr);
   if ((open ?? []).length > 0) return { error: "breeding.errOpenMating" };
 
   const { error } = await supabase.from("matings").insert({
@@ -230,7 +294,9 @@ export async function recordMating(_prev: FormState, fd: FormData): Promise<Form
     due_date: addDays(matingDate, GESTATION_DAYS),
     status: "Planned",
   });
-  if (error) return { error: error.message };
+  if (error) return dbFail("recordMating.insert", error);
+
+  await notifyEvent({ type: "mating_recorded", eweId, eweTag: ewe.tag, ramTag: ram.tag, matingDate });
 
   updateTag(FLOCK_TAG);
   return { ok: true };
@@ -238,25 +304,45 @@ export async function recordMating(_prev: FormState, fd: FormData): Promise<Form
 
 /** Advance a mating: Confirmed marks the ewe pregnant, Failed releases her. */
 export async function setMatingStatus(id: number, status: MatingStatus) {
+  await requireUser();
   const supabase = getSupabase();
   const { data: mating, error: mErr } = await supabase
     .from("matings")
     .select("id, ewe_id, ram_id, mating_date, due_date, status")
     .eq("id", id)
     .single();
-  if (mErr || !mating) throw new Error(mErr?.message ?? "Mating not found");
+  if (mErr) dbThrow("setMatingStatus.load", mErr);
+  if (!mating) throw new Error("Mating not found");
 
   const { error } = await supabase.from("matings").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) dbThrow("setMatingStatus.update", error);
 
   if (status === "Confirmed") {
+    const { data: eweBefore } = await supabase
+      .from("sheep")
+      .select("tag, health")
+      .eq("id", mating.ewe_id)
+      .single();
     const { error: uErr } = await supabase
       .from("sheep")
       .update({ health: "Pregnant", due_date: mating.due_date })
       .eq("id", mating.ewe_id);
-    if (uErr) throw new Error(uErr.message);
+    if (uErr) dbThrow("setMatingStatus.pregnant", uErr);
+    if (eweBefore && eweBefore.health !== "Pregnant") {
+      await notifyEvent({
+        type: "health_changed",
+        sheepId: mating.ewe_id,
+        tag: eweBefore.tag,
+        previousHealth: eweBefore.health,
+        newHealth: "Pregnant",
+      });
+    }
   } else if (status === "Failed") {
     await resetEwePregnancy(mating.ewe_id);
+    const { data: pair } = await supabase.from("sheep").select("id, tag").in("id", [mating.ewe_id, mating.ram_id]);
+    const eweTag = (pair ?? []).find((s) => s.id === mating.ewe_id)?.tag ?? String(mating.ewe_id);
+    const ramTag = (pair ?? []).find((s) => s.id === mating.ram_id)?.tag ?? String(mating.ram_id);
+    await notifyEvent({ type: "mating_failed", eweId: mating.ewe_id, eweTag, ramTag });
   }
 
   updateTag(FLOCK_TAG);
@@ -264,34 +350,32 @@ export async function setMatingStatus(id: number, status: MatingStatus) {
 
 /** Register the lambs born from a mating: creates sheep rows with dam & sire linked. */
 export async function recordLambing(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
   const supabase = getSupabase();
   const matingId = parseInt(str(fd, "mating_id"), 10);
-  const birth = str(fd, "birth");
   const count = parseInt(str(fd, "count"), 10);
 
   if (!Number.isFinite(matingId)) return { error: "breeding.errPair" };
-  if (!birth) return { error: "form.errDob" };
 
-  const lambs: { tag: string; sex: Sex; weight: number }[] = [];
+  const rawLambs: { tag: string; sex: string; weight: number }[] = [];
   for (let i = 0; i < (Number.isFinite(count) ? count : 0); i++) {
-    const tag = str(fd, `tag_${i}`);
-    const sex = str(fd, `sex_${i}`) as Sex;
-    const w = parseFloat(str(fd, `weight_${i}`));
-    if (!tag) return { error: "form.errTagRequired" };
-    if (sex !== "Ewe" && sex !== "Ram") return { error: "form.errSex" };
-    lambs.push({ tag, sex, weight: Number.isFinite(w) && w > 0 ? Math.round(w) : 4 });
+    rawLambs.push({
+      tag: str(fd, `tag_${i}`),
+      sex: str(fd, `sex_${i}`),
+      weight: parseFloat(str(fd, `weight_${i}`)),
+    });
   }
-  if (lambs.length === 0) return { error: "lambing.errNoLambs" };
-
-  const lowered = lambs.map((l) => l.tag.toLowerCase());
-  if (new Set(lowered).size !== lambs.length) return { error: "form.errTagInUse" };
+  const parsed = validateLambingInput({ birth: str(fd, "birth"), lambs: rawLambs });
+  if (!parsed.ok) return { error: parsed.error };
+  const { birth, lambs } = parsed.data;
 
   const { data: mating, error: mErr } = await supabase
     .from("matings")
     .select("id, ewe_id, ram_id, status")
     .eq("id", matingId)
     .single();
-  if (mErr || !mating) return { error: mErr?.message ?? "breeding.errPair" };
+  if (mErr) return dbFail("recordLambing.mating", mErr);
+  if (!mating) return { error: "breeding.errPair" };
   const typedMating = mating as Pick<Mating, "id" | "ewe_id" | "ram_id" | "status">;
 
   const { data: ewe, error: eErr } = await supabase
@@ -299,34 +383,52 @@ export async function recordLambing(_prev: FormState, fd: FormData): Promise<For
     .select("id, breed, color")
     .eq("id", typedMating.ewe_id)
     .single();
-  if (eErr || !ewe) return { error: eErr?.message ?? "breeding.errPair" };
+  if (eErr) return dbFail("recordLambing.ewe", eErr);
+  if (!ewe) return { error: "breeding.errPair" };
 
-  // Case-insensitive tag uniqueness against the whole flock in one query.
-  const orFilter = lambs.map((l) => `tag.ilike.${l.tag.replace(/[,()]/g, "")}`).join(",");
-  const { data: dup, error: dErr } = await supabase.from("sheep").select("id").or(orFilter);
-  if (dErr) return { error: dErr.message };
-  if ((dup ?? []).length > 0) return { error: "form.errTagInUse" };
+  // Case-insensitive tag uniqueness against the whole flock. One parameterized
+  // ilike per lamb (litters are tiny) — no hand-built filter string to inject into.
+  for (const l of lambs) {
+    const { data: dup, error: dErr } = await supabase
+      .from("sheep")
+      .select("id")
+      .ilike("tag", escapeLike(l.tag))
+      .limit(1);
+    if (dErr) return dbFail("recordLambing.dupCheck", dErr);
+    if ((dup ?? []).length > 0) return { error: "form.errTagInUse" };
+  }
 
-  const { error: insErr } = await supabase.from("sheep").insert(
-    lambs.map((l) => ({
-      tag: l.tag,
-      sex: l.sex,
-      birth,
-      breed: ewe.breed,
-      color: ewe.color,
-      weight: l.weight,
-      mother_id: typedMating.ewe_id,
-      father_id: typedMating.ram_id,
-      health: "Healthy",
-    }))
+  const { data: inserted, error: insErr } = await supabase
+    .from("sheep")
+    .insert(
+      lambs.map((l) => ({
+        tag: l.tag,
+        sex: l.sex,
+        birth,
+        breed: ewe.breed,
+        color: ewe.color,
+        weight: l.weight,
+        mother_id: typedMating.ewe_id,
+        father_id: typedMating.ram_id,
+        health: "Healthy",
+      }))
+    )
+    .select("id, tag");
+  if (insErr) return dbFail("recordLambing.insert", insErr);
+
+  await Promise.all(
+    lambs.map((l) => {
+      const row = inserted?.find((r) => r.tag === l.tag);
+      if (!row) return;
+      return notifyEvent({ type: "new_sheep", sheepId: row.id, tag: l.tag, sex: l.sex, breed: ewe.breed });
+    })
   );
-  if (insErr) return { error: insErr.message };
 
   const { error: sErr } = await supabase
     .from("matings")
     .update({ status: "Lambed" })
     .eq("id", matingId);
-  if (sErr) return { error: sErr.message };
+  if (sErr) return dbFail("recordLambing.markLambed", sErr);
 
   await resetEwePregnancy(typedMating.ewe_id);
 

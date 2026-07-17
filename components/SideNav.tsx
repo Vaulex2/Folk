@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { IconDash, IconList, IconAdd, IconTree, IconHeart, IconSheep } from "./icons";
 import { useT } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
+import ActorPicker from "./ActorPicker";
 
 const links = [
   { href: "/", key: "nav.dashboard", icon: IconDash, exact: true },
@@ -37,6 +38,7 @@ export default function SideNav({ flockName }: { flockName: string }) {
         );
       })}
       <div className="side-foot">
+        <div style={{ marginBottom: 8 }}><ActorPicker className="input" /></div>
         <div style={{ marginBottom: 12 }}><LanguageSwitcher className="input" /></div>
         {t("nav.sideFoot")}
       </div>

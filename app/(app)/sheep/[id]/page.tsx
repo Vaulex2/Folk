@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getAllSheep, getHealthNotes, getMatings, getWeightRecords } from "@/lib/flock";
 import { hasSupabaseConfig } from "@/lib/supabase";
@@ -49,7 +50,7 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
 
       <div className="detail-top">
         <span className="avatar">
-          {s.photoUrl ? <img src={s.photoUrl} alt={s.tag} /> : s.tag}
+          {s.photoUrl ? <Image src={s.photoUrl} alt={s.tag} width={84} height={84} /> : s.tag}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
