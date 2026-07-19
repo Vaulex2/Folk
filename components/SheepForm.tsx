@@ -19,6 +19,8 @@ export interface SheepFormValues {
   health?: string;
   vaccination_date?: string;
   due_date?: string;
+  purchase_price?: string;
+  purchase_date?: string;
 }
 
 export default function SheepForm({
@@ -114,6 +116,16 @@ export default function SheepForm({
       <div className="field">
         <label htmlFor="due_date">{t("form.lambingDue")}</label>
         <input className="input" id="due_date" name="due_date" type="date" defaultValue={values.due_date ?? ""} />
+      </div>
+
+      <div className="field">
+        <label htmlFor="purchase_price">{t("money.purchasePrice")}</label>
+        <input className="input" id="purchase_price" name="purchase_price" type="number" min="0" step="any" placeholder={t("money.pricePlaceholder")} defaultValue={values.purchase_price ?? ""} />
+      </div>
+
+      <div className="field">
+        <label htmlFor="purchase_date">{t("money.purchaseDate")}</label>
+        <input className="input" id="purchase_date" name="purchase_date" type="date" defaultValue={values.purchase_date ?? ""} />
       </div>
 
       <div className="form-actions form-full">

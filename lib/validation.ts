@@ -4,6 +4,7 @@
 // Error strings are i18n keys, same convention as FormState.error.
 
 import { HEALTH_STATUSES, type HealthStatus, type Sex } from "./sheep";
+import { TX_CATEGORIES, type TxCategory } from "./finance";
 
 export type Validated<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -19,6 +20,8 @@ export interface SheepRecord {
   health: HealthStatus;
   vaccination_date: string | null;
   due_date: string | null;
+  purchase_price: number | null;
+  purchase_date: string | null;
 }
 
 /** Defaults applied when no weight is given: typical adult ram/ewe. */
@@ -39,6 +42,8 @@ export function validateSheepInput(raw: {
   health: string;
   vaccination_date: string;
   due_date: string;
+  purchase_price: string;
+  purchase_date: string;
 }): Validated<SheepRecord> {
   if (!raw.tag) return { ok: false, error: "form.errTagRequired" };
   if (!raw.birth) return { ok: false, error: "form.errDob" };
@@ -46,6 +51,8 @@ export function validateSheepInput(raw: {
   if (!HEALTH_STATUSES.includes(raw.health as HealthStatus)) {
     return { ok: false, error: "form.errHealth" };
   }
+  const price = parsePrice(raw.purchase_price);
+  if (price.invalid) return { ok: false, error: "money.errPrice" };
 
   const sex = raw.sex as Sex;
   const w = parseInt(raw.weight, 10);
@@ -63,6 +70,146 @@ export function validateSheepInput(raw: {
       health: raw.health as HealthStatus,
       vaccination_date: raw.vaccination_date || null,
       due_date: raw.due_date || null,
+      purchase_price: price.value,
+      purchase_date: price.value != null ? raw.purchase_date || null : null,
+    },
+  };
+}
+
+/** Empty string means "no price"; anything else must parse to a number ≥ 0. */
+export function parsePrice(raw: string): { value: number | null; invalid: boolean } {
+  if (!raw) return { value: null, invalid: false };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return { value: null, invalid: true };
+  return { value: n, invalid: false };
+}
+
+export interface BulkAddInput {
+  count: number;
+  sex: Sex;
+  breed: string | null;
+  color: string | null;
+  age_years: number;
+  weight: number;
+  purchase_price: number | null;
+  purchase_date: string | null;
+  health: HealthStatus;
+  due_date: string | null;
+  start_num: number;
+}
+
+export const BULK_MAX = 200;
+
+/** Validate the bulk-add form: one shared profile applied to `count` animals. */
+export function validateBulkAdd(raw: {
+  count: string;
+  sex: string;
+  breed: string;
+  color: string;
+  avgAge: string;
+  avgWeight: string;
+  price: string;
+  purchaseDate: string;
+  health: string;
+  dueDate: string;
+  startTag: string;
+}): Validated<BulkAddInput> {
+  const count = parseInt(raw.count, 10);
+  if (!Number.isFinite(count) || count < 1 || count > BULK_MAX) {
+    return { ok: false, error: "bulk.errCount" };
+  }
+  if (raw.sex !== "Ewe" && raw.sex !== "Ram") return { ok: false, error: "form.errSex" };
+  const sex = raw.sex as Sex;
+
+  const age = Number(raw.avgAge);
+  if (!Number.isFinite(age) || age <= 0 || age > 20) return { ok: false, error: "bulk.errAge" };
+
+  const startNum = parseInt(raw.startTag, 10);
+  if (!Number.isFinite(startNum) || startNum < 1) return { ok: false, error: "bulk.errStart" };
+
+  if (!HEALTH_STATUSES.includes(raw.health as HealthStatus)) {
+    return { ok: false, error: "form.errHealth" };
+  }
+
+  const price = parsePrice(raw.price);
+  if (price.invalid) return { ok: false, error: "money.errPrice" };
+
+  const w = parseInt(raw.avgWeight, 10);
+  return {
+    ok: true,
+    data: {
+      count,
+      sex,
+      breed: raw.breed || null,
+      color: raw.color || null,
+      age_years: age,
+      weight: Number.isFinite(w) && w > 0 ? w : DEFAULT_WEIGHTS[sex],
+      purchase_price: price.value,
+      purchase_date: price.value != null ? raw.purchaseDate || null : null,
+      health: raw.health as HealthStatus,
+      due_date: raw.dueDate || null,
+      start_num: startNum,
+    },
+  };
+}
+
+export interface TaskInput {
+  title: string;
+  due_date: string | null;
+  sheep_id: number | null;
+}
+
+export function validateTask(raw: {
+  title: string;
+  dueDate: string;
+  sheepId: string;
+}): Validated<TaskInput> {
+  if (!raw.title) return { ok: false, error: "tasks.errTitle" };
+  const sheepId = raw.sheepId ? parseInt(raw.sheepId, 10) : null;
+  if (sheepId != null && !Number.isFinite(sheepId)) {
+    return { ok: false, error: "notes.errMissingSheep" };
+  }
+  return {
+    ok: true,
+    data: { title: raw.title, due_date: raw.dueDate || null, sheep_id: sheepId },
+  };
+}
+
+export interface TransactionInput {
+  category: TxCategory;
+  amount: number;
+  date: string;
+  note: string | null;
+  sheep_id: number | null;
+}
+
+export function validateTransaction(raw: {
+  category: string;
+  amount: string;
+  date: string;
+  note: string;
+  sheepId: string;
+}): Validated<TransactionInput> {
+  if (!TX_CATEGORIES.includes(raw.category as TxCategory)) {
+    return { ok: false, error: "finance.errCategory" };
+  }
+  const price = parsePrice(raw.amount);
+  if (price.invalid || price.value == null || price.value <= 0) {
+    return { ok: false, error: "money.errPrice" };
+  }
+  if (!raw.date) return { ok: false, error: "notes.errDate" };
+  const sheepId = raw.sheepId ? parseInt(raw.sheepId, 10) : null;
+  if (sheepId != null && !Number.isFinite(sheepId)) {
+    return { ok: false, error: "notes.errMissingSheep" };
+  }
+  return {
+    ok: true,
+    data: {
+      category: raw.category as TxCategory,
+      amount: price.value,
+      date: raw.date,
+      note: raw.note || null,
+      sheep_id: sheepId,
     },
   };
 }

@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import type { SheepView } from "@/lib/sheep";
 import { HEALTH_STATUSES } from "@/lib/sheep";
 import HealthPill from "@/components/HealthPill";
-import { IconPlus } from "@/components/icons";
+import { IconChevL, IconChevR, IconPlus } from "@/components/icons";
 import { useI18n } from "@/components/I18nProvider";
 
 type SexFilter = "all" | "Ewe" | "Ram";
+
+const PAGE_SIZE = 10;
 
 export default function SheepListClient({ rows, total }: { rows: SheepView[]; total: number }) {
   const router = useRouter();
@@ -17,6 +19,7 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
   const [q, setQ] = useState("");
   const [sex, setSex] = useState<SexFilter>("all");
   const [health, setHealth] = useState<string>("all");
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     let out = rows.slice();
@@ -30,6 +33,21 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
     }
     return out.sort((a, b) => a.tag.localeCompare(b.tag));
   }, [rows, sex, health, q]);
+
+  // Filters shrink the list under your feet — clamp instead of resetting so a
+  // no-op re-render never yanks the user back to page 1.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  const pageRows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+
+  // Any filter change starts back at the first page of the new result.
+  const withReset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
+  const setQ2 = withReset(setQ);
+  const setSex2 = withReset(setSex);
+  const setHealth2 = withReset(setHealth);
 
   return (
     <>
@@ -49,24 +67,24 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
           type="search"
           placeholder={t("list.searchPlaceholder")}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => setQ2(e.target.value)}
         />
         <div className="seg">
           <label className="seg-opt">
-            <input type="radio" name="sexf" checked={sex === "all"} onChange={() => setSex("all")} />{t("list.all")}
+            <input type="radio" name="sexf" checked={sex === "all"} onChange={() => setSex2("all")} />{t("list.all")}
           </label>
           <label className="seg-opt">
-            <input type="radio" name="sexf" checked={sex === "Ewe"} onChange={() => setSex("Ewe")} />{t("list.ewes")}
+            <input type="radio" name="sexf" checked={sex === "Ewe"} onChange={() => setSex2("Ewe")} />{t("list.ewes")}
           </label>
           <label className="seg-opt">
-            <input type="radio" name="sexf" checked={sex === "Ram"} onChange={() => setSex("Ram")} />{t("list.rams")}
+            <input type="radio" name="sexf" checked={sex === "Ram"} onChange={() => setSex2("Ram")} />{t("list.rams")}
           </label>
         </div>
         <select
           className="input"
           style={{ width: "auto", minWidth: 160 }}
           value={health}
-          onChange={(e) => setHealth(e.target.value)}
+          onChange={(e) => setHealth2(e.target.value)}
         >
           <option value="all">{t("list.allHealth")}</option>
           {HEALTH_STATUSES.map((h) => (
@@ -88,7 +106,7 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
             </tr>
           </thead>
           <tbody>
-            {filtered.map((s) => (
+            {pageRows.map((s) => (
               <tr key={s.id} onClick={() => router.push(`/sheep/${s.id}`)}>
                 <td>
                   <span className="rowtagwrap">
@@ -107,6 +125,28 @@ export default function SheepListClient({ rows, total }: { rows: SheepView[]; to
         </table>
         {filtered.length === 0 && <div className="empty">{t("list.noMatch")}</div>}
       </div>
+
+      {pageCount > 1 && (
+        <div className="pager">
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={current === 1}
+            onClick={() => setPage(current - 1)}
+          >
+            <IconChevL />{t("list.prevPage")}
+          </button>
+          <span className="pager-info">{t("list.pageOf", { page: current, pages: pageCount })}</span>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={current === pageCount}
+            onClick={() => setPage(current + 1)}
+          >
+            {t("list.nextPage")}<IconChevR size={16} />
+          </button>
+        </div>
+      )}
     </>
   );
 }

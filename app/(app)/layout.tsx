@@ -1,5 +1,6 @@
 import SideNav from "@/components/SideNav";
 import TabBar from "@/components/TabBar";
+import PastureBackdrop from "@/components/PastureBackdrop";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import ActorProvider from "@/components/ActorProvider";
 import ActorPicker from "@/components/ActorPicker";
@@ -15,6 +16,7 @@ export default async function AppLayout({
   return (
     <ActorProvider actor={actor}>
       <div className="app">
+        <PastureBackdrop variant="app" />
         <SideNav flockName={FLOCK_NAME} />
         <main className="main">
           <div className="mtop">

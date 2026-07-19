@@ -24,6 +24,11 @@ function s(
     vaccination_date: null,
     status: "Active",
     photo_url: null,
+    purchase_price: null,
+    purchase_date: null,
+    sale_price: null,
+    sale_date: null,
+    death_date: null,
   };
 }
 

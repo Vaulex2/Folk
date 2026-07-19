@@ -6,6 +6,7 @@ import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { getServerT } from "@/lib/i18n/server";
 import { FLOCK_NAME } from "@/lib/flockName";
 import LoginForm from "./LoginForm";
+import PastureBackdrop from "@/components/PastureBackdrop";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +24,25 @@ export default async function LoginPage() {
 
   const { t } = await getServerT();
 
+  // A feature as a livestock ear tag: title punched big, detail beneath.
+  const tag = (title: string, sub: string) => (
+    <li className="tag-feat">
+      <b>{t(title)}</b>
+      <p>{t(sub)}</p>
+    </li>
+  );
+
   return (
     <main className="signin-scene">
+      <PastureBackdrop />
       <LanguageSwitcher className="input signin-lang" />
+
+      <div className="signin-stage">
+        <ul className="signin-cord">
+          {tag("signin.recordsT", "signin.recordsD")}
+          {tag("signin.pedigreeT", "signin.pedigreeD")}
+          {tag("signin.breedingT", "signin.breedingD")}
+        </ul>
 
       {/* The card as the focal node of a pedigree: parents above, lambs below. */}
       <div className="signin-tree">
@@ -62,6 +79,13 @@ export default async function LoginPage() {
           <li><span className="lamb" /></li>
           <li><span className="lamb" /></li>
           <li><span className="lamb" /></li>
+        </ul>
+      </div>
+
+        <ul className="signin-cord">
+          {tag("signin.remindT", "signin.remindD")}
+          {tag("signin.moneyT", "signin.moneyD")}
+          {tag("signin.tasksT", "signin.tasksD")}
         </ul>
       </div>
     </main>

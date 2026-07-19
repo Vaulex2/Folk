@@ -2,12 +2,13 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getSupabase } from "./supabase";
 import { requireUser } from "./auth/server";
-import type { Sheep, HealthNote, Mating, WeightRecord } from "./sheep";
+import type { Sheep, HealthNote, Mating, Task, WeightRecord } from "./sheep";
+import type { Transaction } from "./finance";
 
 export const FLOCK_TAG = "flock";
 
 const SHEEP_COLS =
-  "id, tag, sex, birth, breed, color, weight, mother_id, father_id, health, due_date, vaccination_date, status, photo_url";
+  "id, tag, sex, birth, breed, color, weight, mother_id, father_id, health, due_date, vaccination_date, status, photo_url, purchase_price, purchase_date, sale_price, sale_date, death_date";
 
 // One cached read of the whole flock, shared by every screen. Invalidated by
 // revalidateTag(FLOCK_TAG) whenever a sheep or note is written (see app/actions.ts).
@@ -53,6 +54,38 @@ const loadWeightRecords = unstable_cache(
     return (data ?? []) as WeightRecord[];
   },
   ["flock:weight-records"],
+  { tags: [FLOCK_TAG], revalidate: 60 }
+);
+
+const loadTasks = unstable_cache(
+  async (): Promise<Task[]> => {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("id, title, due_date, sheep_id, done")
+      .order("done", { ascending: true })
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: false });
+    if (error) throw new Error(`Failed to load tasks: ${error.message}`);
+    return (data ?? []) as Task[];
+  },
+  ["flock:tasks"],
+  { tags: [FLOCK_TAG], revalidate: 60 }
+);
+
+const loadTransactions = unstable_cache(
+  async (): Promise<Transaction[]> => {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("id, category, amount, date, note, sheep_id")
+      .order("date", { ascending: false })
+      .order("id", { ascending: false });
+    if (error) throw new Error(`Failed to load transactions: ${error.message}`);
+    // numeric can arrive as a string from PostgREST — coerce or sums concatenate
+    return (data ?? []).map((r) => ({ ...r, amount: Number(r.amount) })) as Transaction[];
+  },
+  ["flock:transactions"],
   { tags: [FLOCK_TAG], revalidate: 60 }
 );
 
@@ -108,4 +141,16 @@ export async function getMatings(): Promise<Mating[]> {
 export async function getWeightRecords(sheepId: number): Promise<WeightRecord[]> {
   await requireUser();
   return loadWeightRecords(sheepId);
+}
+
+/** All tasks: open first (by due date), then completed. */
+export async function getTasks(): Promise<Task[]> {
+  await requireUser();
+  return loadTasks();
+}
+
+/** All ledger transactions, newest first. */
+export async function getTransactions(): Promise<Transaction[]> {
+  await requireUser();
+  return loadTransactions();
 }

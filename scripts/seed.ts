@@ -163,6 +163,10 @@ async function main() {
     const { error } = await supabase.from("health_notes").delete().gte("id", 0);
     if (error) throw new Error(error.message);
   });
+  await withRetry("clear tasks", async () => {
+    const { error } = await supabase.from("tasks").delete().gte("id", 0);
+    if (error) throw new Error(error.message);
+  });
   await withRetry("clear sheep", async () => {
     const { error } = await supabase.from("sheep").delete().gte("id", 0);
     if (error) throw new Error(error.message);
@@ -219,7 +223,66 @@ async function main() {
     });
   }
 
-  console.log(`Done. ${tagToId.size} sheep, ${notes.length} health notes.`);
+  // Money demo: the 2019 founders were bought in; a few of last year's ram
+  // lambs were sold this spring. Prices in so'm.
+  const founders = flock.filter((g) => g.birthYear === 2019).slice(0, 5);
+  await withRetry("set purchase prices", async () => {
+    for (const [i, g] of founders.entries()) {
+      const { error } = await supabase
+        .from("sheep")
+        .update({ purchase_price: 1200000 + i * 150000, purchase_date: "2019-09-15" })
+        .eq("id", tagToId.get(g.tag)!);
+      if (error) throw new Error(error.message);
+    }
+  });
+
+  const saleCandidates = flock.filter((g) => g.birthYear === 2025 && g.sex === "Ram").slice(0, 3);
+  await withRetry("mark sold", async () => {
+    for (const [i, g] of saleCandidates.entries()) {
+      const { error } = await supabase
+        .from("sheep")
+        .update({ status: "Sold", sale_price: 2600000 + i * 300000, sale_date: `2026-0${4 + i}-10` })
+        .eq("id", tagToId.get(g.tag)!);
+      if (error) throw new Error(error.message);
+    }
+  });
+
+  const loss = flock.find((g) => g.birthYear === 2025 && g.sex === "Ewe");
+  if (loss) {
+    await withRetry("mark died", async () => {
+      const { error } = await supabase
+        .from("sheep")
+        .update({ status: "Died", death_date: "2026-02-18" })
+        .eq("id", tagToId.get(loss.tag)!);
+      if (error) throw new Error(error.message);
+    });
+  }
+
+  // A handful of open tasks so the Tasks page and reminders have content.
+  const isoDay = (offset: number) => {
+    const d = new Date(TODAY);
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+  const pregnant = flock.find((g) => g.health === "Pregnant");
+  const tasks = [
+    { title: "Qirqim — asosiy qo‘ra", due_date: isoDay(10), sheep_id: null as number | null, done: false },
+    { title: "Tuyoq parvarishi", due_date: isoDay(2), sheep_id: null, done: false },
+    { title: "Yem-xashak zaxirasini tekshirish", due_date: null, sheep_id: null, done: false },
+    ...(pregnant
+      ? [{ title: "Tug‘ish qo‘rasini tayyorlash", due_date: isoDay(20), sheep_id: tagToId.get(pregnant.tag)!, done: false }]
+      : []),
+    { title: "Suv nasosini ta’mirlash", due_date: isoDay(-6), sheep_id: null, done: true },
+  ];
+  await withRetry("insert tasks", async () => {
+    const { error } = await supabase.from("tasks").insert(tasks);
+    if (error) throw new Error(error.message);
+  });
+
+  console.log(
+    `Done. ${tagToId.size} sheep, ${notes.length} health notes, ${tasks.length} tasks, ` +
+      `${founders.length} purchases, ${saleCandidates.length} sales.`
+  );
 }
 
 main().catch((e) => {

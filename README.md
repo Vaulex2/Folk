@@ -11,10 +11,18 @@ design system imported from Claude Design.
 - **Sheep detail** — facts, parents, offspring, and a dated **health-notes history**.
 - **Add / edit** — register a lamb and link its dam & sire; edit any record.
 - **Soft remove** — mark a sheep *Sold* or *Died*; pedigree links to its offspring stay intact.
+- **History** — an archive of every animal that left the flock: sold (with price & date,
+  plus a running total) and died (with date), each linking back to its full record.
 - **Family tree** — parents → animal → offspring, tap any relative to re-centre.
 - **Breeding check** — pick a ewe + ram to get their **kinship**, the predicted **inbreeding
   of the offspring** (Wright's coefficients over the pedigree), common ancestors, and a
   plain-language verdict before you pair them.
+- **Weight & growth** — dated weight history per animal with a growth chart and
+  **average daily gain** (overall and recent).
+- **Sales & purchases** — record a purchase price on bought-in animals and a sale
+  price when marking a sheep Sold; the dashboard totals the year's money in and out.
+- **Tasks & reminders** — a farm to-do list (shearing, hoof trimming, feed…) with
+  optional due dates and per-sheep links; dated tasks go out as Telegram reminders.
 
 ## Setup
 
@@ -39,14 +47,15 @@ design system imported from Claude Design.
 ## Data model
 
 `sheep` (id, tag, sex, birth, breed, color, weight, mother_id, father_id, health, due_date,
-status) and `health_notes` (sheep_id, date, status, note). Offspring are **derived** from
-parent references, never stored. See `supabase/schema.sql`.
+status, purchase/sale price + date), `health_notes` (sheep_id, date, status, note),
+`weight_records` (sheep_id, date, weight_kg), and `tasks` (title, due_date, sheep_id, done).
+Offspring are **derived** from parent references, never stored. See `supabase/schema.sql`.
 
 ## Notifications (Telegram)
 
 The app can post to a Telegram group whenever a sheep is added, its health status
-changes, it's marked Sold/Died, or a vaccination is coming due (checked daily,
-3 days ahead). Delivery runs entirely through two Supabase Edge Functions —
+changes, it's marked Sold/Died (with the sale price when given), or a vaccination
+or dated task is coming due (checked daily, 3 days ahead). Delivery runs entirely through two Supabase Edge Functions —
 `supabase/functions/notify-event` (called synchronously from `app/actions.ts`
 after a write succeeds) and `supabase/functions/vaccination-reminder` (called
 daily by a `pg_cron` job defined in `supabase/schema.sql`). "Who did it" comes

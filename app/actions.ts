@@ -16,9 +16,12 @@ import {
   type SheepStatus,
 } from "@/lib/sheep";
 import {
+  validateBulkAdd,
   validateHealthNote,
   validateLambingInput,
   validateSheepInput,
+  validateTask,
+  validateTransaction,
   validateWeightRecord,
 } from "@/lib/validation";
 
@@ -71,6 +74,8 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
     health: str(fd, "health"),
     vaccination_date: str(fd, "vaccination_date"),
     due_date: str(fd, "due_date"),
+    purchase_price: str(fd, "purchase_price"),
+    purchase_date: str(fd, "purchase_date"),
   });
   if (!parsed.ok) return { error: parsed.error };
   const record = parsed.data;
@@ -92,7 +97,7 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
   } else {
     const { data: before, error: beforeErr } = await supabase
       .from("sheep")
-      .select("tag, sex, birth, breed, color, weight, mother_id, father_id, health, vaccination_date, due_date")
+      .select("tag, sex, birth, breed, color, weight, mother_id, father_id, health, vaccination_date, due_date, purchase_price, purchase_date")
       .eq("id", id)
       .single();
     if (beforeErr) return dbFail("saveSheep.before", beforeErr);
@@ -114,6 +119,8 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
       "father_id",
       "vaccination_date",
       "due_date",
+      "purchase_price",
+      "purchase_date",
     ] as const;
     const changedFields = editableFields.filter((f) => before[f] !== record[f]);
     if (changedFields.length > 0) {
@@ -125,17 +132,106 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
   redirect(`/sheep/${savedId}`);
 }
 
-/** Soft-remove: mark Sold or Died (keeps pedigree links intact) or restore to Active. */
-export async function setSheepStatus(id: number, status: SheepStatus) {
+/** Register a batch of animals sharing one profile (sex, breed, age, price…).
+ * Tags are sequential zero-padded numbers starting from the given number. */
+export async function bulkAddSheep(_prev: FormState, fd: FormData): Promise<FormState> {
   await requireUser();
   const supabase = getSupabase();
-  const { error } = await supabase.from("sheep").update({ status }).eq("id", id);
+  const parsed = validateBulkAdd({
+    count: str(fd, "count"),
+    sex: str(fd, "sex"),
+    breed: str(fd, "breed"),
+    color: str(fd, "color"),
+    avgAge: str(fd, "avg_age"),
+    avgWeight: str(fd, "avg_weight"),
+    price: str(fd, "price"),
+    purchaseDate: str(fd, "purchase_date"),
+    health: str(fd, "health"),
+    dueDate: str(fd, "due_date"),
+    startTag: str(fd, "start_tag"),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+  const b = parsed.data;
+
+  const birth = addDays(
+    new Date().toISOString().slice(0, 10),
+    -Math.round(b.age_years * 365.25)
+  );
+  const width = Math.max(3, String(b.start_num + b.count - 1).length);
+  const tags = Array.from({ length: b.count }, (_, i) =>
+    String(b.start_num + i).padStart(width, "0")
+  );
+
+  // One read of all existing tags beats N ilike round-trips for uniqueness.
+  const { data: existing, error: exErr } = await supabase.from("sheep").select("tag");
+  if (exErr) return dbFail("bulkAddSheep.tags", exErr);
+  const taken = new Set((existing ?? []).map((r) => r.tag.toLowerCase()));
+  if (tags.some((tg) => taken.has(tg.toLowerCase()))) return { error: "form.errTagInUse" };
+
+  const rows = tags.map((tag) => ({
+    tag,
+    sex: b.sex,
+    birth,
+    breed: b.breed,
+    color: b.color,
+    weight: b.weight,
+    health: b.health,
+    due_date: b.due_date,
+    purchase_price: b.purchase_price,
+    purchase_date: b.purchase_date,
+    status: "Active",
+  }));
+  const { error } = await supabase.from("sheep").insert(rows);
+  if (error) return dbFail("bulkAddSheep.insert", error);
+
+  await notifyEvent({
+    type: "bulk_added",
+    count: b.count,
+    sex: b.sex,
+    breed: b.breed,
+    firstTag: tags[0],
+    lastTag: tags[tags.length - 1],
+  });
+
+  updateTag(FLOCK_TAG);
+  redirect("/sheep");
+}
+
+/** Soft-remove: mark Sold (optionally with a price) or Died — keeps pedigree
+ * links intact — or restore to Active, which clears any recorded sale. */
+export async function setSheepStatus(id: number, status: SheepStatus, salePrice?: number | null) {
+  await requireUser();
+  const supabase = getSupabase();
+
+  const update: {
+    status: SheepStatus;
+    sale_price?: number | null;
+    sale_date?: string | null;
+    death_date?: string | null;
+  } = { status };
+  const today = new Date().toISOString().slice(0, 10);
+  if (status === "Sold") {
+    const price = Number.isFinite(salePrice as number) && (salePrice as number) >= 0 ? salePrice : null;
+    update.sale_price = price;
+    update.sale_date = today;
+    update.death_date = null;
+  } else if (status === "Died") {
+    update.death_date = today;
+    update.sale_price = null;
+    update.sale_date = null;
+  } else if (status === "Active") {
+    update.sale_price = null;
+    update.sale_date = null;
+    update.death_date = null;
+  }
+
+  const { error } = await supabase.from("sheep").update(update).eq("id", id);
   if (error) dbThrow("setSheepStatus.update", error);
 
   const { data } = await supabase.from("sheep").select("tag").eq("id", id).single();
   const tag = data?.tag ?? String(id);
   if (status === "Sold" || status === "Died") {
-    await notifyEvent({ type: "removed", sheepId: id, tag, status });
+    await notifyEvent({ type: "removed", sheepId: id, tag, status, salePrice: update.sale_price ?? null });
   } else if (status === "Active") {
     await notifyEvent({ type: "restored", sheepId: id, tag });
   }
@@ -247,6 +343,69 @@ export async function addWeightRecord(_prev: FormState, fd: FormData): Promise<F
 
   updateTag(FLOCK_TAG);
   return { ok: true };
+}
+
+/** Add a farm task (optionally linked to one sheep, optionally dated). */
+export async function addTask(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
+  const supabase = getSupabase();
+  const parsed = validateTask({
+    title: str(fd, "title"),
+    dueDate: str(fd, "due_date"),
+    sheepId: str(fd, "sheep_id"),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+
+  const { error } = await supabase.from("tasks").insert(parsed.data);
+  if (error) return dbFail("addTask.insert", error);
+
+  updateTag(FLOCK_TAG);
+  return { ok: true };
+}
+
+/** Tick a task off (or untick it). */
+export async function setTaskDone(id: number, done: boolean) {
+  await requireUser();
+  const supabase = getSupabase();
+  const { error } = await supabase.from("tasks").update({ done }).eq("id", id);
+  if (error) dbThrow("setTaskDone.update", error);
+  updateTag(FLOCK_TAG);
+}
+
+export async function deleteTask(id: number) {
+  await requireUser();
+  const supabase = getSupabase();
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) dbThrow("deleteTask.delete", error);
+  updateTag(FLOCK_TAG);
+}
+
+/** Record a ledger expense or extra income (optionally linked to one sheep). */
+export async function addTransaction(_prev: FormState, fd: FormData): Promise<FormState> {
+  await requireUser();
+  const supabase = getSupabase();
+  const parsed = validateTransaction({
+    category: str(fd, "category"),
+    amount: str(fd, "amount"),
+    date: str(fd, "date"),
+    note: str(fd, "note"),
+    sheepId: str(fd, "sheep_id"),
+  });
+  if (!parsed.ok) return { error: parsed.error };
+
+  const { error } = await supabase.from("transactions").insert(parsed.data);
+  if (error) return dbFail("addTransaction.insert", error);
+
+  updateTag(FLOCK_TAG);
+  return { ok: true };
+}
+
+export async function deleteTransaction(id: number) {
+  await requireUser();
+  const supabase = getSupabase();
+  const { error } = await supabase.from("transactions").delete().eq("id", id);
+  if (error) dbThrow("deleteTransaction.delete", error);
+  updateTag(FLOCK_TAG);
 }
 
 /** Clear a ewe's pregnancy state (after lambing, or a failed mating). */

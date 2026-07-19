@@ -49,6 +49,9 @@ Deno.serve(async (req) => {
   const in3 = new Date(today);
   in3.setDate(in3.getDate() + 3);
 
+  let notified = 0;
+
+  // -- Vaccinations falling due within 3 days --------------------------------
   const { data: candidates, error } = await supabase
     .from("sheep")
     .select("id, tag, breed, vaccination_date")
@@ -61,35 +64,70 @@ Deno.serve(async (req) => {
     console.error("vaccination-reminder: query failed", error);
     return Response.json({ ok: false, error: error.message });
   }
-  if (!candidates || candidates.length === 0) {
-    return Response.json({ ok: true, notified: 0 });
+
+  if (candidates && candidates.length > 0) {
+    const { data: alreadySent } = await supabase
+      .from("notification_log")
+      .select("sheep_id, ref_date")
+      .eq("type", "vaccination_due")
+      .in(
+        "sheep_id",
+        candidates.map((c) => c.id)
+      );
+
+    const sentKeys = new Set((alreadySent ?? []).map((r) => `${r.sheep_id}:${r.ref_date}`));
+    const due = candidates.filter((c) => !sentKeys.has(`${c.id}:${c.vaccination_date}`));
+
+    if (due.length > 0) {
+      const lines = due.map((c) => `• ${c.tag} (${c.breed ?? "—"}) — muddat: ${c.vaccination_date}`);
+      await sendTelegramMessage(
+        `💉 Emlash eslatmalari — ${due.length} ta qo‘y 3 kun ichida emlanishi kerak:\n${lines.join("\n")}`
+      );
+
+      const { error: logErr } = await supabase
+        .from("notification_log")
+        .insert(due.map((c) => ({ sheep_id: c.id, type: "vaccination_due", ref_date: c.vaccination_date })));
+      if (logErr) console.error("vaccination-reminder: failed to log", logErr);
+      notified += due.length;
+    }
   }
 
-  const { data: alreadySent } = await supabase
-    .from("notification_log")
-    .select("sheep_id, ref_date")
-    .eq("type", "vaccination_due")
-    .in(
-      "sheep_id",
-      candidates.map((c) => c.id)
-    );
+  // -- Open tasks falling due within 3 days (incl. overdue ones never sent) --
+  const { data: taskRows, error: taskErr } = await supabase
+    .from("tasks")
+    .select("id, title, due_date, sheep_id")
+    .eq("done", false)
+    .not("due_date", "is", null)
+    .lte("due_date", isoDate(in3));
 
-  const sentKeys = new Set((alreadySent ?? []).map((r) => `${r.sheep_id}:${r.ref_date}`));
-  const due = candidates.filter((c) => !sentKeys.has(`${c.id}:${c.vaccination_date}`));
+  if (taskErr) {
+    console.error("vaccination-reminder: task query failed", taskErr);
+  } else if (taskRows && taskRows.length > 0) {
+    const { data: taskSent } = await supabase
+      .from("notification_log")
+      .select("task_id, ref_date")
+      .eq("type", "task_due")
+      .in(
+        "task_id",
+        taskRows.map((t) => t.id)
+      );
 
-  if (due.length === 0) {
-    return Response.json({ ok: true, notified: 0 });
+    const taskSentKeys = new Set((taskSent ?? []).map((r) => `${r.task_id}:${r.ref_date}`));
+    const dueTasks = taskRows.filter((t) => !taskSentKeys.has(`${t.id}:${t.due_date}`));
+
+    if (dueTasks.length > 0) {
+      const lines = dueTasks.map((t) => `• ${t.title} — muddat: ${t.due_date}`);
+      await sendTelegramMessage(
+        `📋 Vazifa eslatmalari — ${dueTasks.length} ta vazifaning muddati yaqin:\n${lines.join("\n")}`
+      );
+
+      const { error: taskLogErr } = await supabase
+        .from("notification_log")
+        .insert(dueTasks.map((t) => ({ task_id: t.id, type: "task_due", ref_date: t.due_date })));
+      if (taskLogErr) console.error("vaccination-reminder: failed to log tasks", taskLogErr);
+      notified += dueTasks.length;
+    }
   }
 
-  const lines = due.map((c) => `• ${c.tag} (${c.breed ?? "—"}) — muddat: ${c.vaccination_date}`);
-  await sendTelegramMessage(
-    `💉 Emlash eslatmalari — ${due.length} ta qo‘y 3 kun ichida emlanishi kerak:\n${lines.join("\n")}`
-  );
-
-  const { error: logErr } = await supabase
-    .from("notification_log")
-    .insert(due.map((c) => ({ sheep_id: c.id, type: "vaccination_due", ref_date: c.vaccination_date })));
-  if (logErr) console.error("vaccination-reminder: failed to log", logErr);
-
-  return Response.json({ ok: true, notified: due.length });
+  return Response.json({ ok: true, notified });
 });

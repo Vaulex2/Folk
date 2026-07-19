@@ -39,12 +39,28 @@ type NotifyPayload =
       newHealth: string;
       actor: string;
     }
-  | { type: "removed"; sheepId: number; tag: string; status: "Sold" | "Died"; actor: string }
+  | {
+      type: "removed";
+      sheepId: number;
+      tag: string;
+      status: "Sold" | "Died";
+      salePrice?: number | null;
+      actor: string;
+    }
   | { type: "restored"; sheepId: number; tag: string; actor: string }
   | { type: "sheep_edited"; sheepId: number; tag: string; changedFields: string[]; actor: string }
   | { type: "note_added"; sheepId: number; tag: string; note: string; actor: string }
   | { type: "mating_recorded"; eweId: number; eweTag: string; ramTag: string; matingDate: string; actor: string }
-  | { type: "mating_failed"; eweId: number; eweTag: string; ramTag: string; actor: string };
+  | { type: "mating_failed"; eweId: number; eweTag: string; ramTag: string; actor: string }
+  | {
+      type: "bulk_added";
+      count: number;
+      sex: string;
+      breed: string | null;
+      firstTag: string;
+      lastTag: string;
+      actor: string;
+    };
 
 // Uzbek labels matching lib/i18n/messages.ts's `uz` locale, so wording stays
 // consistent with the app itself.
@@ -80,8 +96,13 @@ function formatMessage(p: NotifyPayload): string {
       return `🐑 Yangi qo‘y qo‘shildi: ${p.tag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan`;
     case "health_changed":
       return `⚕️ Sog‘liq holati o‘zgardi: ${p.tag} — ${healthUz(p.previousHealth)} → ${healthUz(p.newHealth)} — ${p.actor} tomonidan`;
-    case "removed":
-      return `${p.status === "Sold" ? "💰" : "🕊️"} Qo‘y ${STATUS_UZ[p.status]} deb belgilandi: ${p.tag} — ${p.actor} tomonidan`;
+    case "removed": {
+      const price =
+        p.status === "Sold" && p.salePrice != null
+          ? ` (${Math.round(p.salePrice).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} so‘m)`
+          : "";
+      return `${p.status === "Sold" ? "💰" : "🕊️"} Qo‘y ${STATUS_UZ[p.status]} deb belgilandi: ${p.tag}${price} — ${p.actor} tomonidan`;
+    }
     case "restored":
       return `♻️ Qo‘y faol holatga qaytarildi: ${p.tag} — ${p.actor} tomonidan`;
     case "sheep_edited": {
@@ -94,6 +115,8 @@ function formatMessage(p: NotifyPayload): string {
       return `❤️ Yangi juftlash qayd etildi: ${p.eweTag} x ${p.ramTag} (${p.matingDate}) — ${p.actor} tomonidan`;
     case "mating_failed":
       return `💔 Juftlash muvaffaqiyatsiz tugadi: ${p.eweTag} x ${p.ramTag} — ${p.actor} tomonidan`;
+    case "bulk_added":
+      return `🐑 ${p.count} ta qo‘y birdan qo‘shildi: ${p.firstTag}–${p.lastTag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan`;
   }
 }
 

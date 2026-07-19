@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getActiveSheep } from "@/lib/flock";
+import { getAllSheep, getTasks } from "@/lib/flock";
 import { hasSupabaseConfig } from "@/lib/supabase";
 import SetupNotice from "@/components/SetupNotice";
 import HealthPill from "@/components/HealthPill";
@@ -13,7 +13,8 @@ export default async function DashboardPage() {
   if (!hasSupabaseConfig()) return <SetupNotice />;
   const { locale, t } = await getServerT();
   const today = new Date();
-  const all = await getActiveSheep();
+  const [whole, tasks] = await Promise.all([getAllSheep(), getTasks()]);
+  const all = whole.filter((s) => s.status === "Active");
 
   const ewes = all.filter((s) => s.sex === "Ewe");
   const rams = all.filter((s) => s.sex === "Ram");
@@ -28,14 +29,20 @@ export default async function DashboardPage() {
         a.tag.localeCompare(b.tag)
     );
 
-  // Upcoming reminders: lambing (due_date) + scheduled vaccinations (vaccination_date).
+  // Upcoming reminders: lambing (due_date), scheduled vaccinations
+  // (vaccination_date), and dated open tasks.
   const upcoming = all
     .flatMap((s) => {
-      const items: { id: number; tag: string; date: string; kind: string }[] = [];
-      if (s.due_date) items.push({ id: s.id, tag: s.tag, date: s.due_date, kind: t("dashboard.lambingDue") });
-      if (s.vaccination_date) items.push({ id: s.id, tag: s.tag, date: s.vaccination_date, kind: t("dashboard.vaccinationDue") });
+      const items: { href: string; tag: string; date: string; kind: string; plain?: boolean }[] = [];
+      if (s.due_date) items.push({ href: `/sheep/${s.id}`, tag: s.tag, date: s.due_date, kind: t("dashboard.lambingDue") });
+      if (s.vaccination_date) items.push({ href: `/sheep/${s.id}`, tag: s.tag, date: s.vaccination_date, kind: t("dashboard.vaccinationDue") });
       return items;
     })
+    .concat(
+      tasks
+        .filter((task) => !task.done && task.due_date)
+        .map((task) => ({ href: "/tasks", tag: task.title, date: task.due_date!, kind: t("dashboard.taskDue"), plain: true }))
+    )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 6);
 
@@ -99,9 +106,9 @@ export default async function DashboardPage() {
             <span className="count">{t("dashboard.upcomingSub")}</span>
           </div>
           <div className="liste">
-            {upcoming.map((u) => (
-              <Link key={`${u.id}-${u.kind}`} href={`/sheep/${u.id}`} className="lrow">
-                <span className="ltag">{u.tag}</span>
+            {upcoming.map((u, i) => (
+              <Link key={`${u.tag}-${u.kind}-${i}`} href={u.href} className="lrow">
+                <span className={u.plain ? "ltitle" : "ltag"}>{u.tag}</span>
                 <span className="lmeta">{u.kind}</span>
                 <span className="tag tag-neutral">{fmtDate(u.date, locale)}</span>
                 <span className="chev"><IconChevR /></span>

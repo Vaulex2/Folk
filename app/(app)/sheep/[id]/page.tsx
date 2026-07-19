@@ -11,7 +11,7 @@ import AddWeightForm from "./AddWeightForm";
 import PhotoUploader from "./PhotoUploader";
 import GrowthChart from "@/components/GrowthChart";
 import { IconChevL } from "@/components/icons";
-import { fmtDate, findSheep, getOpenMatingForEwe, offspringOf, view } from "@/lib/sheep";
+import { averageDailyGain, fmtDate, fmtMoney, findSheep, getOpenMatingForEwe, offspringOf, view } from "@/lib/sheep";
 import { getServerT } from "@/lib/i18n/server";
 import { getMessages } from "@/lib/i18n/messages";
 
@@ -54,7 +54,7 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <h1 style={{ margin: 0, fontSize: 32 }}>{s.tag}</h1>
+            <h1 className="detail-tag">{s.tag}</h1>
             <HealthPill health={s.health} label={s.healthLabel} style={{ fontSize: 12, padding: "4px 12px" }} />
             {sheep.status !== "Active" && (
               <span className="tag tag-neutral" style={{ fontSize: 12 }}>{s.statusLabel}</span>
@@ -76,6 +76,18 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
             )}
             {sheep.due_date && (
               <div><div className="fact-l">{t("detail.dueDate")}</div><div className="fact-v">{fmtDate(sheep.due_date, locale)}</div></div>
+            )}
+            {sheep.purchase_price != null && (
+              <div><div className="fact-l">{t("money.purchasePrice")}</div><div className="fact-v">{fmtMoney(Number(sheep.purchase_price))} {t("money.currency")}</div></div>
+            )}
+            {sheep.status === "Sold" && sheep.sale_price != null && (
+              <div><div className="fact-l">{t("money.salePrice")}</div><div className="fact-v">{fmtMoney(Number(sheep.sale_price))} {t("money.currency")}</div></div>
+            )}
+            {sheep.status === "Sold" && sheep.sale_date && (
+              <div><div className="fact-l">{t("money.saleDate")}</div><div className="fact-v">{fmtDate(sheep.sale_date, locale)}</div></div>
+            )}
+            {sheep.status === "Died" && sheep.death_date && (
+              <div><div className="fact-l">{t("history.deathDate")}</div><div className="fact-v">{fmtDate(sheep.death_date, locale)}</div></div>
             )}
           </div>
 
@@ -139,6 +151,26 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
 
       <h2 style={{ fontSize: 20, margin: "30px 0 12px" }}>{t("weights.title")}</h2>
       <div className="panel">
+        {(() => {
+          const adg = averageDailyGain(weights);
+          if (adg.overall == null && adg.recent == null) return null;
+          return (
+            <div className="facts" style={{ marginTop: 0, marginBottom: 12 }}>
+              {adg.overall != null && (
+                <div>
+                  <div className="fact-l">{t("weights.adgOverall")}</div>
+                  <div className="fact-v">{adg.overall > 0 ? "+" : ""}{adg.overall} {t("weights.gPerDay")}</div>
+                </div>
+              )}
+              {adg.recent != null && (
+                <div>
+                  <div className="fact-l">{t("weights.adgRecent")}</div>
+                  <div className="fact-v">{adg.recent > 0 ? "+" : ""}{adg.recent} {t("weights.gPerDay")}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <GrowthChart
           points={weights.map((w) => ({ date: w.date, kg: Number(w.weight_kg), label: fmtDate(w.date, locale) }))}
           firstLabel={weights.length ? fmtDate(weights[0].date, locale) : ""}

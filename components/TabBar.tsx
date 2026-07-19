@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconDash, IconList, IconAdd, IconTree, IconHeart } from "./icons";
+import { IconDash, IconList, IconAdd, IconTree, IconHeart, IconHistory, IconMoney, IconTasks } from "./icons";
 import { useT } from "./I18nProvider";
 
 const tabs = [
@@ -10,6 +10,9 @@ const tabs = [
   { href: "/sheep/new", key: "tabs.add", icon: IconAdd, exact: true },
   { href: "/tree", key: "tabs.tree", icon: IconTree },
   { href: "/breeding", key: "tabs.breed", icon: IconHeart },
+  { href: "/tasks", key: "tabs.tasks", icon: IconTasks },
+  { href: "/finance", key: "tabs.finance", icon: IconMoney },
+  { href: "/history", key: "tabs.history", icon: IconHistory },
 ];
 
 export default function TabBar() {

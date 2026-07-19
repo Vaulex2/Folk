@@ -24,6 +24,15 @@ export const IconHeart = ({ size = 20 }: P) => (
 export const IconSheep = ({ size = 19 }: P) => (
   <svg {...base(size)}><path d="M12 3c-2 0-3.2 1.3-3.2 3 0 .5-.5.8-1 .8C6.2 6.8 5 8 5 9.6c0 1 .5 1.7 1.2 2.1-.7.5-1.2 1.3-1.2 2.3C5 16 6.3 17 8 17h8c1.7 0 3-1 3-3 0-1-.5-1.8-1.2-2.3.7-.4 1.2-1.1 1.2-2.1 0-1.6-1.2-2.8-2.8-2.8-.5 0-1-.3-1-.8C15.2 4.3 14 3 12 3Z" /><path d="M9 17v2M15 17v2" /></svg>
 );
+export const IconTasks = ({ size = 20 }: P) => (
+  <svg {...base(size)}><rect x="4" y="4" width="16" height="16" rx="2.5" /><path d="m8.5 12.5 2.5 2.5 4.5-5" /></svg>
+);
+export const IconMoney = ({ size = 20 }: P) => (
+  <svg {...base(size)}><rect x="2.5" y="6" width="19" height="12" rx="2.5" /><circle cx="12" cy="12" r="2.6" /><path d="M6.2 12h.01M17.8 12h.01" /></svg>
+);
+export const IconHistory = ({ size = 20 }: P) => (
+  <svg {...base(size)}><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5" /><path d="M3.5 3.5v5h5" /><path d="M12 7.5V12l3 2" /></svg>
+);
 export const IconChevR = ({ size = 18 }: P) => (
   <svg {...base(size)}><path d="m9 6 6 6-6 6" /></svg>
 );

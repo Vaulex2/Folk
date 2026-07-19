@@ -6,12 +6,13 @@ import { logError } from "@/lib/log";
 export type NotifyPayload =
   | { type: "new_sheep"; sheepId: number; tag: string; sex: string; breed: string | null }
   | { type: "health_changed"; sheepId: number; tag: string; previousHealth: string; newHealth: string }
-  | { type: "removed"; sheepId: number; tag: string; status: "Sold" | "Died" }
+  | { type: "removed"; sheepId: number; tag: string; status: "Sold" | "Died"; salePrice?: number | null }
   | { type: "restored"; sheepId: number; tag: string }
   | { type: "sheep_edited"; sheepId: number; tag: string; changedFields: string[] }
   | { type: "note_added"; sheepId: number; tag: string; note: string }
   | { type: "mating_recorded"; eweId: number; eweTag: string; ramTag: string; matingDate: string }
-  | { type: "mating_failed"; eweId: number; eweTag: string; ramTag: string };
+  | { type: "mating_failed"; eweId: number; eweTag: string; ramTag: string }
+  | { type: "bulk_added"; count: number; sex: string; breed: string | null; firstTag: string; lastTag: string };
 
 /** Fire-and-forget Telegram notification via the notify-event Edge Function.
  * Never throws — a notification failure must not break the underlying

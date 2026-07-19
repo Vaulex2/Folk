@@ -4,7 +4,9 @@ import {
   ageLabel,
   ageYears,
   ancestorLevels,
+  averageDailyGain,
   findSheep,
+  fmtMoney,
   GESTATION_DAYS,
   getOpenMatingForEwe,
   isLamb,
@@ -29,6 +31,11 @@ function s(id: number, birth: string, mother: number | null = null, father: numb
     vaccination_date: null,
     status: "Active",
     photo_url: null,
+    purchase_price: null,
+    purchase_date: null,
+    sale_price: null,
+    sale_date: null,
+    death_date: null,
   };
 }
 
@@ -132,5 +139,49 @@ describe("getOpenMatingForEwe", () => {
   it("ignores closed matings and other ewes", () => {
     expect(getOpenMatingForEwe([m(1, 5, "Lambed"), m(2, 5, "Failed")], 5)).toBeUndefined();
     expect(getOpenMatingForEwe([m(1, 6, "Planned")], 5)).toBeUndefined();
+  });
+});
+
+describe("averageDailyGain", () => {
+  it("needs at least two records", () => {
+    expect(averageDailyGain([])).toEqual({ overall: null, recent: null });
+    expect(averageDailyGain([{ date: "2026-01-01", weight_kg: 40 }])).toEqual({
+      overall: null,
+      recent: null,
+    });
+  });
+
+  it("computes overall and recent gain in g/day", () => {
+    const records = [
+      { date: "2026-01-01", weight_kg: 40 },
+      { date: "2026-01-31", weight_kg: 46 },
+      { date: "2026-03-01", weight_kg: 52.8 },
+    ];
+    // overall: 12.8 kg over 59 days ≈ 217 g/day; recent: 6.8 kg over 29 days ≈ 234 g/day
+    expect(averageDailyGain(records)).toEqual({ overall: 217, recent: 234 });
+  });
+
+  it("handles weight loss with a negative gain", () => {
+    const records = [
+      { date: "2026-01-01", weight_kg: 50 },
+      { date: "2026-01-11", weight_kg: 48 },
+    ];
+    expect(averageDailyGain(records)).toEqual({ overall: -200, recent: -200 });
+  });
+
+  it("returns null gains for same-day records", () => {
+    const records = [
+      { date: "2026-01-01", weight_kg: 40 },
+      { date: "2026-01-01", weight_kg: 41 },
+    ];
+    expect(averageDailyGain(records)).toEqual({ overall: null, recent: null });
+  });
+});
+
+describe("fmtMoney", () => {
+  it("groups thousands with spaces", () => {
+    expect(fmtMoney(1500000)).toBe("1\u00A0500\u00A0000");
+    expect(fmtMoney(950)).toBe("950");
+    expect(fmtMoney(0)).toBe("0");
   });
 });

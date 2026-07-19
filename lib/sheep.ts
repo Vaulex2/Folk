@@ -29,6 +29,11 @@ export interface Sheep {
   vaccination_date: string | null;
   status: SheepStatus;
   photo_url: string | null;
+  purchase_price: number | null;
+  purchase_date: string | null;
+  sale_price: number | null;
+  sale_date: string | null;
+  death_date: string | null;
 }
 
 export interface HealthNote {
@@ -44,6 +49,14 @@ export interface WeightRecord {
   sheep_id: number;
   date: string;
   weight_kg: number;
+}
+
+export interface Task {
+  id: number;
+  title: string;
+  due_date: string | null;
+  sheep_id: number | null;
+  done: boolean;
 }
 
 export type MatingStatus = "Planned" | "Confirmed" | "Lambed" | "Failed";
@@ -74,7 +87,17 @@ export function getOpenMatingForEwe(matings: Mating[], eweId: number): Mating | 
   );
 }
 
-export const BREEDS = ["Suffolk", "Merino", "Dorset", "Romney", "Texel", "Border Leicester"];
+export const BREEDS = [
+  "Jaydari",
+  "Hissar",
+  "Karakul",
+  "Suffolk",
+  "Merino",
+  "Dorset",
+  "Romney",
+  "Texel",
+  "Border Leicester",
+];
 export const COLORS = ["White", "Black face", "Grey", "Speckled", "Brown"];
 
 export const HEALTH_STATUSES: HealthStatus[] = [
@@ -227,4 +250,37 @@ export function ancestorLevels(flock: Sheep[], focal: Sheep, depth = 3): (Sheep 
 
 export function byTag(a: { tag: string }, b: { tag: string }) {
   return a.tag.localeCompare(b.tag);
+}
+
+export interface AdgResult {
+  /** Whole-history gain, g/day; null with fewer than two dated records. */
+  overall: number | null;
+  /** Gain between the two newest records, g/day; null when they share a date. */
+  recent: number | null;
+}
+
+const daysBetween = (a: string, b: string) =>
+  (new Date(b + "T00:00:00").getTime() - new Date(a + "T00:00:00").getTime()) / 86400000;
+
+/** Average daily gain from a weight history sorted oldest-first. */
+export function averageDailyGain(records: { date: string; weight_kg: number }[]): AdgResult {
+  if (records.length < 2) return { overall: null, recent: null };
+  const first = records[0];
+  const last = records[records.length - 1];
+  const prev = records[records.length - 2];
+
+  const span = daysBetween(first.date, last.date);
+  const recentSpan = daysBetween(prev.date, last.date);
+  const gPerDay = (from: { weight_kg: number }, to: { weight_kg: number }, days: number) =>
+    Math.round(((Number(to.weight_kg) - Number(from.weight_kg)) * 1000) / days);
+
+  return {
+    overall: span > 0 ? gPerDay(first, last, span) : null,
+    recent: recentSpan > 0 ? gPerDay(prev, last, recentSpan) : null,
+  };
+}
+
+/** Thousands-grouped money label, e.g. "1 250 000". Currency unit comes from i18n. */
+export function fmtMoney(n: number): string {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }

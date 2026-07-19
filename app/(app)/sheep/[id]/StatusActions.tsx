@@ -1,5 +1,5 @@
 "use client";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setSheepStatus } from "@/app/actions";
@@ -9,14 +9,23 @@ import { useT } from "@/components/I18nProvider";
 
 export default function StatusActions({ id, status }: { id: number; status: SheepStatus }) {
   const [pending, start] = useTransition();
+  const [selling, setSelling] = useState(false);
+  const [price, setPrice] = useState("");
   const router = useRouter();
   const t = useT();
 
-  function change(next: SheepStatus) {
+  function change(next: SheepStatus, salePrice?: number | null) {
     start(async () => {
-      await setSheepStatus(id, next);
+      await setSheepStatus(id, next, salePrice);
+      setSelling(false);
+      setPrice("");
       router.refresh();
     });
+  }
+
+  function confirmSale() {
+    const n = Number(price);
+    change("Sold", price !== "" && Number.isFinite(n) && n >= 0 ? n : null);
   }
 
   return (
@@ -28,14 +37,36 @@ export default function StatusActions({ id, status }: { id: number; status: Shee
         <IconEdit />{t("detail.edit")}
       </Link>
       {status === "Active" ? (
-        <>
-          <button className="btn btn-danger" type="button" disabled={pending} onClick={() => change("Sold")}>
-            {t("detail.markSold")}
-          </button>
-          <button className="btn btn-danger" type="button" disabled={pending} onClick={() => change("Died")}>
-            {t("detail.markDied")}
-          </button>
-        </>
+        selling ? (
+          <>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="any"
+              style={{ maxWidth: 170 }}
+              placeholder={t("money.salePricePrompt")}
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              autoFocus
+            />
+            <button className="btn btn-danger" type="button" disabled={pending} onClick={confirmSale}>
+              {t("money.confirmSale")}
+            </button>
+            <button className="btn btn-secondary" type="button" disabled={pending} onClick={() => setSelling(false)}>
+              {t("form.cancel")}
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn-danger" type="button" disabled={pending} onClick={() => setSelling(true)}>
+              {t("detail.markSold")}
+            </button>
+            <button className="btn btn-danger" type="button" disabled={pending} onClick={() => change("Died")}>
+              {t("detail.markDied")}
+            </button>
+          </>
+        )
       ) : (
         <button className="btn btn-secondary" type="button" disabled={pending} onClick={() => change("Active")}>
           {t("detail.restore")}

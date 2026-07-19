@@ -41,6 +41,8 @@ export default async function EditSheepPage({ params }: { params: Promise<{ id: 
           health: sheep.health,
           vaccination_date: sheep.vaccination_date ?? "",
           due_date: sheep.due_date ?? "",
+          purchase_price: sheep.purchase_price != null ? String(sheep.purchase_price) : "",
+          purchase_date: sheep.purchase_date ?? "",
         }}
         eweOptions={parentOptions(ewes, today, locale, sheep.id)}
         ramOptions={parentOptions(rams, today, locale, sheep.id)}
