@@ -1,0 +1,7 @@
+{
+  "name": "flock-core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Framework-free domain logic shared by the Flock web (Next.js) and mobile (Expo) apps. Consumed via subpath imports, e.g. `flock-core/sheep`.",
+  "types": "sheep.ts"
+}

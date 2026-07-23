@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Flock",
+    "slug": "flock",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "flock",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F4F1E9"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.flock.app"
+    },
+    "android": {
+      "package": "com.flock.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#3C6E47",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Flock needs access to your photos to attach a picture to a sheep record.",
+          "cameraPermission": "Flock needs the camera to take a photo of a sheep."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Flock uses biometrics to lock the app."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "de587d34-0c92-4c4c-a98a-a0db66c98d4a"
+      }
+    }
+  }
+}
