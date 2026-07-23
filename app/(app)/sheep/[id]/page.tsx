@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getAllSheep, getHealthNotes, getMatings, getWeightRecords } from "@/lib/flock";
 import { hasSupabaseConfig } from "@/lib/supabase";
@@ -49,9 +48,7 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
       </Link>
 
       <div className="detail-top">
-        <span className="avatar">
-          {s.photoUrl ? <Image src={s.photoUrl} alt={s.tag} width={84} height={84} /> : s.tag}
-        </span>
+        <PhotoUploader sheepId={sheep.id} tag={s.tag} photoUrl={s.photoUrl} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <h1 className="detail-tag">{s.tag}</h1>
@@ -92,14 +89,13 @@ export default async function SheepDetailPage({ params }: { params: Promise<{ id
           </div>
 
           <StatusActions id={sheep.id} status={sheep.status} />
-          <div className="form-actions" style={{ marginTop: 10 }}>
-            {openMating && (
+          {openMating && (
+            <div className="form-actions" style={{ marginTop: 10 }}>
               <Link className="btn btn-primary" href={`/breeding/lambing/${openMating.id}`}>
                 {t("detail.recordLambing")}
               </Link>
-            )}
-            <PhotoUploader sheepId={sheep.id} hasPhoto={!!s.photoUrl} />
-          </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { uploadSheepPhoto } from "@/app/actions";
 import { useI18n } from "@/components/I18nProvider";
 
@@ -21,12 +22,25 @@ async function downscale(file: File): Promise<Blob> {
   });
 }
 
-export default function PhotoUploader({ sheepId, hasPhoto }: { sheepId: number; hasPhoto: boolean }) {
+export default function PhotoUploader({
+  sheepId,
+  tag,
+  photoUrl,
+}: {
+  sheepId: number;
+  tag: string;
+  photoUrl: string | null;
+}) {
   const router = useRouter();
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Shown immediately from the downscaled local file, before the upload round
+  // trip resolves — swapping this in avoids a visible gap between picking a
+  // photo and the avatar updating, without waiting on router.refresh()'s full
+  // page re-fetch (getAllSheep + notes + matings + weights) just to show it.
+  const [preview, setPreview] = useState<string | null>(null);
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -40,18 +54,39 @@ export default function PhotoUploader({ sheepId, hasPhoto }: { sheepId: number; 
       setError("photo.errUpload");
       return;
     }
+    setPreview(URL.createObjectURL(blob));
     start(async () => {
       const fd = new FormData();
       fd.set("sheep_id", String(sheepId));
       fd.set("file", new File([blob], `${sheepId}.jpg`, { type: "image/jpeg" }));
       const res = await uploadSheepPhoto({}, fd);
-      if (res.error) setError(res.error);
-      else router.refresh();
+      if (res.error) {
+        setError(res.error);
+        setPreview(null);
+      } else {
+        router.refresh();
+      }
     });
   }
 
+  const shown = preview ?? photoUrl;
+
   return (
-    <>
+    <div className="photo-editor">
+      <span className="avatar">
+        {shown ? (
+          preview ? (
+            // Local blob: URI — next/image can't optimize it, and it's already
+            // downscaled, so a plain <img> is correct here.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shown} alt={tag} />
+          ) : (
+            <Image src={shown} alt={tag} width={84} height={84} />
+          )
+        ) : (
+          tag
+        )}
+      </span>
       <input
         ref={inputRef}
         type="file"
@@ -66,9 +101,9 @@ export default function PhotoUploader({ sheepId, hasPhoto }: { sheepId: number; 
         disabled={pending}
         onClick={() => inputRef.current?.click()}
       >
-        {pending ? t("photo.uploading") : hasPhoto ? t("photo.change") : t("photo.add")}
+        {pending ? t("photo.uploading") : shown ? t("photo.change") : t("photo.add")}
       </button>
       {error && <span className="form-err">{t(error)}</span>}
-    </>
+    </div>
   );
 }
