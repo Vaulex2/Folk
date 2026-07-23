@@ -93,7 +93,28 @@ export async function saveSheep(_prev: FormState, fd: FormData): Promise<FormSta
     const { data, error } = await supabase.from("sheep").insert(record).select("id").single();
     if (error) return dbFail("saveSheep.insert", error);
     savedId = data.id;
-    await notifyEvent({ type: "new_sheep", sheepId: data.id, tag, sex, breed: breed || null });
+
+    let motherTag: string | null = null;
+    let fatherTag: string | null = null;
+    if (record.mother_id != null || record.father_id != null) {
+      const parentIds = [record.mother_id, record.father_id].filter((v): v is number => v != null);
+      const { data: parents } = await supabase.from("sheep").select("id, tag").in("id", parentIds);
+      motherTag = parents?.find((p) => p.id === record.mother_id)?.tag ?? null;
+      fatherTag = parents?.find((p) => p.id === record.father_id)?.tag ?? null;
+    }
+
+    await notifyEvent({
+      type: "new_sheep",
+      sheepId: data.id,
+      tag,
+      sex,
+      breed: breed || null,
+      birth: record.birth,
+      color: record.color,
+      weight: record.weight,
+      motherTag,
+      fatherTag,
+    });
   } else {
     const { data: before, error: beforeErr } = await supabase
       .from("sheep")
@@ -191,6 +212,9 @@ export async function bulkAddSheep(_prev: FormState, fd: FormData): Promise<Form
     breed: b.breed,
     firstTag: tags[0],
     lastTag: tags[tags.length - 1],
+    birth,
+    color: b.color,
+    weight: b.weight,
   });
 
   updateTag(FLOCK_TAG);
@@ -539,11 +563,13 @@ export async function recordLambing(_prev: FormState, fd: FormData): Promise<For
 
   const { data: ewe, error: eErr } = await supabase
     .from("sheep")
-    .select("id, breed, color")
+    .select("id, tag, breed, color")
     .eq("id", typedMating.ewe_id)
     .single();
   if (eErr) return dbFail("recordLambing.ewe", eErr);
   if (!ewe) return { error: "breeding.errPair" };
+
+  const { data: ram } = await supabase.from("sheep").select("tag").eq("id", typedMating.ram_id).single();
 
   // Case-insensitive tag uniqueness against the whole flock. One parameterized
   // ilike per lamb (litters are tiny) — no hand-built filter string to inject into.
@@ -579,7 +605,18 @@ export async function recordLambing(_prev: FormState, fd: FormData): Promise<For
     lambs.map((l) => {
       const row = inserted?.find((r) => r.tag === l.tag);
       if (!row) return;
-      return notifyEvent({ type: "new_sheep", sheepId: row.id, tag: l.tag, sex: l.sex, breed: ewe.breed });
+      return notifyEvent({
+        type: "new_sheep",
+        sheepId: row.id,
+        tag: l.tag,
+        sex: l.sex,
+        breed: ewe.breed,
+        birth,
+        color: ewe.color,
+        weight: l.weight,
+        motherTag: ewe.tag,
+        fatherTag: ram?.tag ?? null,
+      });
     })
   );
 

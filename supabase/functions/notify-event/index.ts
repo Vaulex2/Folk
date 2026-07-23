@@ -30,7 +30,19 @@ async function sendTelegramMessage(text: string): Promise<void> {
 }
 
 type NotifyPayload =
-  | { type: "new_sheep"; sheepId: number; tag: string; sex: string; breed: string | null; actor: string }
+  | {
+      type: "new_sheep";
+      sheepId: number;
+      tag: string;
+      sex: string;
+      breed: string | null;
+      actor: string;
+      birth?: string;
+      color?: string | null;
+      weight?: number;
+      motherTag?: string | null;
+      fatherTag?: string | null;
+    }
   | {
       type: "health_changed";
       sheepId: number;
@@ -60,6 +72,9 @@ type NotifyPayload =
       firstTag: string;
       lastTag: string;
       actor: string;
+      birth?: string;
+      color?: string | null;
+      weight?: number;
     };
 
 // Uzbek labels matching lib/i18n/messages.ts's `uz` locale, so wording stays
@@ -92,8 +107,16 @@ function healthUz(v: string): string {
 
 function formatMessage(p: NotifyPayload): string {
   switch (p.type) {
-    case "new_sheep":
-      return `🐑 Yangi qo‘y qo‘shildi: ${p.tag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan`;
+    case "new_sheep": {
+      const details: string[] = [];
+      if (p.birth) details.push(`tug‘ilgan: ${p.birth}`);
+      if (p.weight != null) details.push(`vazn: ${p.weight} kg`);
+      if (p.color) details.push(`rang: ${p.color}`);
+      if (p.motherTag) details.push(`onasi: ${p.motherTag}`);
+      if (p.fatherTag) details.push(`otasi: ${p.fatherTag}`);
+      const extra = details.length ? `\n${details.join(", ")}` : "";
+      return `🐑 Yangi qo‘y qo‘shildi: ${p.tag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan${extra}`;
+    }
     case "health_changed":
       return `⚕️ Sog‘liq holati o‘zgardi: ${p.tag} — ${healthUz(p.previousHealth)} → ${healthUz(p.newHealth)} — ${p.actor} tomonidan`;
     case "removed": {
@@ -115,8 +138,14 @@ function formatMessage(p: NotifyPayload): string {
       return `❤️ Yangi juftlash qayd etildi: ${p.eweTag} x ${p.ramTag} (${p.matingDate}) — ${p.actor} tomonidan`;
     case "mating_failed":
       return `💔 Juftlash muvaffaqiyatsiz tugadi: ${p.eweTag} x ${p.ramTag} — ${p.actor} tomonidan`;
-    case "bulk_added":
-      return `🐑 ${p.count} ta qo‘y birdan qo‘shildi: ${p.firstTag}–${p.lastTag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan`;
+    case "bulk_added": {
+      const details: string[] = [];
+      if (p.birth) details.push(`tug‘ilgan: ${p.birth}`);
+      if (p.weight != null) details.push(`vazn: ${p.weight} kg`);
+      if (p.color) details.push(`rang: ${p.color}`);
+      const extra = details.length ? `\n${details.join(", ")}` : "";
+      return `🐑 ${p.count} ta qo‘y birdan qo‘shildi: ${p.firstTag}–${p.lastTag} (${SEX_UZ[p.sex] ?? p.sex}, ${p.breed ?? "—"}) — ${p.actor} tomonidan${extra}`;
+    }
   }
 }
 

@@ -4,7 +4,18 @@ import { getActor } from "@/lib/actor/server";
 import { logError } from "@/lib/log";
 
 export type NotifyPayload =
-  | { type: "new_sheep"; sheepId: number; tag: string; sex: string; breed: string | null }
+  | {
+      type: "new_sheep";
+      sheepId: number;
+      tag: string;
+      sex: string;
+      breed: string | null;
+      birth?: string;
+      color?: string | null;
+      weight?: number;
+      motherTag?: string | null;
+      fatherTag?: string | null;
+    }
   | { type: "health_changed"; sheepId: number; tag: string; previousHealth: string; newHealth: string }
   | { type: "removed"; sheepId: number; tag: string; status: "Sold" | "Died"; salePrice?: number | null }
   | { type: "restored"; sheepId: number; tag: string }
@@ -12,7 +23,17 @@ export type NotifyPayload =
   | { type: "note_added"; sheepId: number; tag: string; note: string }
   | { type: "mating_recorded"; eweId: number; eweTag: string; ramTag: string; matingDate: string }
   | { type: "mating_failed"; eweId: number; eweTag: string; ramTag: string }
-  | { type: "bulk_added"; count: number; sex: string; breed: string | null; firstTag: string; lastTag: string };
+  | {
+      type: "bulk_added";
+      count: number;
+      sex: string;
+      breed: string | null;
+      firstTag: string;
+      lastTag: string;
+      birth?: string;
+      color?: string | null;
+      weight?: number;
+    };
 
 /** Fire-and-forget Telegram notification via the notify-event Edge Function.
  * Never throws — a notification failure must not break the underlying
